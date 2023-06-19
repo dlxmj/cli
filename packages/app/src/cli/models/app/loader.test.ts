@@ -1,15 +1,16 @@
 import {load} from './loader.js'
+import {GenericSpecification} from './extensions.js'
 import {configurationFileNames, blocks} from '../../constants.js'
 import metadata from '../../metadata.js'
-import {loadLocalExtensionsSpecifications} from '../extensions/load-specifications.js'
-import {ExtensionSpecification} from '../extensions/specification.js'
+import {loadLocalExtensionsSpecifications} from '../extensions/specifications.js'
 import {describe, expect, beforeEach, afterEach, beforeAll, test} from 'vitest'
 import {yarnLockfile, pnpmLockfile, PackageJson, pnpmWorkspaceFile} from '@shopify/cli-kit/node/node-package-manager'
 import {inTemporaryDirectory, moveFile, mkdir, mkTmpDir, rmdir, writeFile} from '@shopify/cli-kit/node/fs'
 import {joinPath, dirname, cwd} from '@shopify/cli-kit/node/path'
 
 describe('load', () => {
-  let specifications: ExtensionSpecification[] = []
+  type BlockType = 'ui' | 'function' | 'theme'
+  let specifications: GenericSpecification[] = []
 
   let tmpDir: string
   const appConfiguration = `
@@ -56,30 +57,48 @@ scopes = "read_products"
     return joinPath(tmpDir, blocks.extensions.directoryName, name)
   }
 
-  const blockConfigurationPath = ({name, directory}: {name: string; directory?: string}) => {
-    const configurationName = 'shopify.extension.toml'
+  const blockConfigurationPath = ({
+    blockType,
+    name,
+    directory,
+  }: {
+    blockType: BlockType
+    name: string
+    directory?: string
+  }) => {
+    const configurationName = blocks.extensions.configurationName[blockType]
     return directory
       ? joinPath(directory, configurationName)
       : joinPath(tmpDir, blocks.extensions.directoryName, name, configurationName)
   }
 
-  const makeBlockDir = async ({name, directory}: {name: string; directory?: string}) => {
-    const directoryName = dirname(blockConfigurationPath({name, directory}))
+  const makeBlockDir = async ({
+    blockType,
+    name,
+    directory,
+  }: {
+    blockType: BlockType
+    name: string
+    directory?: string
+  }) => {
+    const directoryName = dirname(blockConfigurationPath({blockType, name, directory}))
     await mkdir(directoryName)
     return directoryName
   }
 
   const writeBlockConfig = async ({
+    blockType,
     blockConfiguration,
     name,
     directory,
   }: {
+    blockType: BlockType
     blockConfiguration: string
     name: string
     directory?: string
   }) => {
-    const blockDir = await makeBlockDir({name, directory})
-    const configPath = blockConfigurationPath({name, directory})
+    const blockDir = await makeBlockDir({blockType, name, directory})
+    const configPath = blockConfigurationPath({blockType, name, directory})
     await writeFile(configPath, blockConfiguration)
     return {blockDir, configPath}
   }
@@ -205,7 +224,7 @@ scopes = "read_products"
 
   test("throws an error if the extension configuration file doesn't exist", async () => {
     // Given
-    await makeBlockDir({name: 'my-extension'})
+    await makeBlockDir({blockType: 'ui', name: 'my-extension'})
 
     // When
     await expect(load({directory: tmpDir, specifications})).rejects.toThrow(/Couldn't find the configuration file/)
@@ -217,6 +236,7 @@ scopes = "read_products"
       wrong = "my_extension"
       `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my-extension',
     })
@@ -280,6 +300,7 @@ scopes = "read_products"
       path = "dist/index.wasm"
       `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my-extension',
     })
@@ -289,9 +310,9 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions[0]!.configuration.name).toBe('my_extension')
-    expect(app.allExtensions[0]!.idEnvironmentVariableName).toBe('SHOPIFY_MY_EXTENSION_ID')
-    expect(app.allExtensions[0]!.localIdentifier).toBe('my-extension')
+    expect(app.extensions.ui[0]!.configuration.name).toBe('my_extension')
+    expect(app.extensions.ui[0]!.idEnvironmentVariableName).toBe('SHOPIFY_MY_EXTENSION_ID')
+    expect(app.extensions.ui[0]!.localIdentifier).toBe('my-extension')
   })
 
   test('loads the app when it has a extension with a valid configuration using a supported extension type', async () => {
@@ -306,6 +327,7 @@ scopes = "read_products"
       path = "dist/index.wasm"
       `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my-extension',
     })
@@ -315,9 +337,9 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions[0]!.configuration.name).toBe('my_extension')
-    expect(app.allExtensions[0]!.idEnvironmentVariableName).toBe('SHOPIFY_MY_EXTENSION_ID')
-    expect(app.allExtensions[0]!.localIdentifier).toBe('my-extension')
+    expect(app.extensions.ui[0]!.configuration.name).toBe('my_extension')
+    expect(app.extensions.ui[0]!.idEnvironmentVariableName).toBe('SHOPIFY_MY_EXTENSION_ID')
+    expect(app.extensions.ui[0]!.localIdentifier).toBe('my-extension')
   })
 
   test('loads the app when it has a extension with a valid configuration using a supported extension type and in a non-conventional directory configured in the app configuration file', async () => {
@@ -334,6 +356,7 @@ scopes = "read_products"
       type = "checkout_post_purchase_external"
     `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'custom-extension',
       directory: customExtensionDirectory,
@@ -344,9 +367,9 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions[0]!.configuration.name).toBe('custom_extension')
-    expect(app.allExtensions[0]!.idEnvironmentVariableName).toBe('SHOPIFY_CUSTOM_EXTENSION_ID')
-    expect(app.allExtensions[0]!.localIdentifier).toBe('custom_extension')
+    expect(app.extensions.ui[0]!.configuration.name).toBe('custom_extension')
+    expect(app.extensions.ui[0]!.idEnvironmentVariableName).toBe('SHOPIFY_CUSTOM_EXTENSION_ID')
+    expect(app.extensions.ui[0]!.localIdentifier).toBe('custom_extension')
   })
 
   test('loads the app from a extension directory when it has a extension with a valid configuration', async () => {
@@ -357,6 +380,7 @@ scopes = "read_products"
       type = "checkout_post_purchase"
       `
     const {blockDir} = await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my-extension',
     })
@@ -367,8 +391,8 @@ scopes = "read_products"
 
     // Then
     expect(app.name).toBe('my_app')
-    expect(app.allExtensions[0]!.configuration.name).toBe('my_extension')
-    expect(app.allExtensions[0]!.idEnvironmentVariableName).toBe('SHOPIFY_MY_EXTENSION_ID')
+    expect(app.extensions.ui[0]!.configuration.name).toBe('my_extension')
+    expect(app.extensions.ui[0]!.idEnvironmentVariableName).toBe('SHOPIFY_MY_EXTENSION_ID')
   })
 
   test('loads the app with several extensions that have valid configurations', async () => {
@@ -380,6 +404,7 @@ scopes = "read_products"
       type = "checkout_post_purchase"
       `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my_extension_1',
     })
@@ -390,6 +415,7 @@ scopes = "read_products"
       type = "product_subscription"
       `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my_extension_2',
     })
@@ -399,8 +425,8 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions).toHaveLength(2)
-    const extensions = app.allExtensions.sort((extA, extB) =>
+    expect(app.extensions.ui).toHaveLength(2)
+    const extensions = app.extensions.ui.sort((extA, extB) =>
       extA.configuration.name < extB.configuration.name ? -1 : 1,
     )
     expect(extensions[0]!.configuration.name).toBe('my_extension_1')
@@ -419,6 +445,7 @@ scopes = "read_products"
         type = "checkout_post_purchase"
         `
         await writeBlockConfig({
+          blockType: 'ui',
           blockConfiguration,
           name: `my_extension_${index}`,
         })
@@ -440,6 +467,7 @@ scopes = "read_products"
       type = "checkout_post_purchase"
       `
     const {blockDir} = await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my-extension',
     })
@@ -457,6 +485,7 @@ scopes = "read_products"
     type = "wrong_type"
     `
     await writeBlockConfig({
+      blockType: 'ui',
       blockConfiguration,
       name: 'my-extension',
     })
@@ -467,7 +496,7 @@ scopes = "read_products"
 
   test("throws an error if the configuration file doesn't exist", async () => {
     // Given
-    await makeBlockDir({name: 'my-functions'})
+    await makeBlockDir({blockType: 'function', name: 'my-functions'})
 
     // When
     await expect(load({directory: tmpDir, specifications})).rejects.toThrow(/Couldn't find the configuration file/)
@@ -479,6 +508,7 @@ scopes = "read_products"
       wrong = "my-function"
     `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function',
     })
@@ -495,6 +525,7 @@ scopes = "read_products"
     apiVersion = "2022-07"
     `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function',
     })
@@ -517,6 +548,7 @@ scopes = "read_products"
       path = "dist/index.wasm"
       `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function',
     })
@@ -525,7 +557,7 @@ scopes = "read_products"
 
     // When
     const app = await load({directory: tmpDir, specifications})
-    const myFunction = app.allExtensions[0]!
+    const myFunction = app.extensions.function[0]!
 
     // Then
     expect(myFunction.configuration.name).toBe('my-function')
@@ -547,6 +579,7 @@ scopes = "read_products"
       path = "dist/index.wasm"
       `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function-1',
     })
@@ -561,6 +594,7 @@ scopes = "read_products"
       path = "dist/index.wasm"
       `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function-2',
     })
@@ -569,8 +603,8 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions).toHaveLength(2)
-    const functions = app.allExtensions.sort((extA, extB) =>
+    expect(app.extensions.function).toHaveLength(2)
+    const functions = app.extensions.function.sort((extA, extB) =>
       extA.configuration.name < extB.configuration.name ? -1 : 1,
     )
     expect(functions[0]!.configuration.name).toBe('my-function-1')
@@ -594,6 +628,7 @@ scopes = "read_products"
       path = "target/wasm32-wasi/release/my-function.wasm"
       `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function',
     })
@@ -602,7 +637,7 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions[0]!.outputPath).toMatch(/wasm32-wasi\/release\/my-function.wasm/)
+    expect(app.extensions.function[0]!.buildWasmPath).toMatch(/wasm32-wasi\/release\/my-function.wasm/)
   })
 
   test(`defaults the function wasm path if not configured`, async () => {
@@ -617,6 +652,7 @@ scopes = "read_products"
       command = "make build"
       `
     await writeBlockConfig({
+      blockType: 'function',
       blockConfiguration,
       name: 'my-function',
     })
@@ -625,7 +661,7 @@ scopes = "read_products"
     const app = await load({directory: tmpDir, specifications})
 
     // Then
-    expect(app.allExtensions[0]!.outputPath).toMatch(/.+dist\/index.wasm$/)
+    expect(app.extensions.function[0]!.buildWasmPath).toMatch(/.+dist\/index.wasm$/)
   })
 
   test(`updates metadata after loading`, async () => {
@@ -660,6 +696,7 @@ scopes = "read_products"
         type = "customer_accounts_ui_extension"
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })
@@ -681,6 +718,7 @@ scopes = "read_products"
 
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })
@@ -700,6 +738,7 @@ scopes = "read_products"
         authenticated_redirect_start_url = '/start-url'
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })
@@ -721,6 +760,7 @@ scopes = "read_products"
         authenticated_redirect_start_url = ''
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })
@@ -742,6 +782,7 @@ scopes = "read_products"
         authenticated_redirect_redirect_urls = ['/start-url']
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })
@@ -763,6 +804,7 @@ scopes = "read_products"
         authenticated_redirect_redirect_urls = ['/start-url', 'https://www.shopify.com/', '/end-url']
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })
@@ -784,6 +826,7 @@ scopes = "read_products"
         authenticated_redirect_redirect_urls = []
       `
       await writeBlockConfig({
+        blockType: 'ui',
         blockConfiguration,
         name: 'my-extension',
       })

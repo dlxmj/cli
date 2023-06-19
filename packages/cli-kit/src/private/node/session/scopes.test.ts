@@ -18,7 +18,6 @@ describe('allDefaultScopes', () => {
       'https://api.shopify.com/auth/partners.collaborator-relationships.readonly',
       'https://api.shopify.com/auth/shop.storefront-renderer.devtools',
       'https://api.shopify.com/auth/partners.app.cli.access',
-      'https://api.shopify.com/auth/destinations.readonly',
       ...customScopes,
     ])
   })
@@ -35,6 +34,7 @@ describe('apiScopes', () => {
 
     // Then
     expect(got).toEqual([
+      'openid',
       'https://api.shopify.com/auth/shop.admin.graphql',
       'https://api.shopify.com/auth/shop.admin.themes',
       'https://api.shopify.com/auth/partners.collaborator-relationships.readonly',

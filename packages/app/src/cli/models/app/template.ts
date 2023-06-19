@@ -1,10 +1,4 @@
-import {ExtensionFlavorValue} from '../../services/generate/extension.js'
-
-export interface ExtensionFlavor {
-  name: string
-  value: ExtensionFlavorValue
-  path?: string
-}
+import {ExtensionFlavor} from './extensions.js'
 
 export interface TemplateType {
   type: string

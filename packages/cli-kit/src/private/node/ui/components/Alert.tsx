@@ -37,25 +37,41 @@ const Alert: FunctionComponent<AlertProps> = ({
   return (
     <Banner type={type}>
       {headline ? (
-        <Text bold>
-          <TokenizedText item={headline} />
-        </Text>
+        <Box>
+          <Text bold>
+            <TokenizedText item={headline} />
+          </Text>
+        </Box>
       ) : null}
 
-      {body ? <TokenizedText item={body} /> : null}
+      {body ? (
+        <Box marginTop={headline ? 1 : 0}>
+          <TokenizedText item={body} />
+        </Box>
+      ) : null}
 
       {nextSteps && nextSteps.length > 0 ? (
-        <List title="Next steps" items={nextSteps} ordered={orderedNextSteps} />
+        <Box marginTop={1}>
+          <List title="Next steps" items={nextSteps} ordered={orderedNextSteps} />
+        </Box>
       ) : null}
 
-      {reference && reference.length > 0 ? <List title="Reference" items={reference} /> : null}
+      {reference && reference.length > 0 ? (
+        <Box marginTop={1}>
+          <List title="Reference" items={reference} />
+        </Box>
+      ) : null}
 
-      {link ? <Link url={link.url} label={link.label} /> : null}
+      {link ? (
+        <Box marginTop={1}>
+          <Link url={link.url} label={link.label} />
+        </Box>
+      ) : null}
 
       {customSections && customSections.length > 0 ? (
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
           {customSections.map((section, index) => (
-            <Box key={index} flexDirection="column">
+            <Box key={index} flexDirection="column" marginTop={1}>
               {section.title ? <Text bold>{section.title}</Text> : null}
               <TokenizedText item={section.body} />
             </Box>

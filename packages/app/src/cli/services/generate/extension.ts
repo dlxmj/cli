@@ -2,7 +2,8 @@ import {versions} from '../../constants.js'
 import {AppInterface} from '../../models/app/app.js'
 import {buildGraphqlTypes} from '../function/build.js'
 import {GenerateExtensionContentOutput} from '../../prompts/generate/extension.js'
-import {ExtensionFlavor, ExtensionTemplate} from '../../models/app/template.js'
+import {ExtensionFlavor} from '../../models/app/extensions.js'
+import {ExtensionTemplate} from '../../models/app/template.js'
 import {
   ensureDownloadedExtensionFlavorExists,
   ensureExtensionDirectoryExists,
@@ -205,10 +206,7 @@ async function uiExtensionInit({directory, url, app, name, extensionFlavor}: Ext
               directory: app.directory,
             })
           }
-          await installNodeModules({
-            packageManager,
-            directory: app.directory,
-          })
+          await installNodeModules({packageManager, directory: app.directory})
         } else {
           await addResolutionOrOverrideIfNeeded(app.directory, extensionFlavor?.value)
           const extensionPackageJsonPath = joinPath(directory, 'package.json')

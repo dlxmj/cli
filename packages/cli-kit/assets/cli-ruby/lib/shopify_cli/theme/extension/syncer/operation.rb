@@ -14,10 +14,6 @@ module ShopifyCLI
           def create?
             kind == :create
           end
-
-          def file_path
-            file.relative_path
-          end
         end
       end
     end

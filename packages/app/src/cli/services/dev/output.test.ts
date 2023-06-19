@@ -22,7 +22,7 @@ describe('output', () => {
         These extensions need to be deployed to be manually tested.
         One testing option is to use a separate app dedicated to staging.
 
-        theme extension name (Theme)
+        theme extension name (Theme app extension)
         Follow the dev doc instructions ( https://shopify.dev/apps/online-store/theme-app-extensions/getting-started#step-3-test-your-changes ) by deploying your work as a draft
         "
       `)
@@ -46,6 +46,10 @@ async function mockApp(): Promise<AppInterface> {
       scopes: 'my-scope',
     },
     nodeDependencies,
-    allExtensions: [functionExtension, themeExtension, uiExtension],
+    extensions: {
+      ui: [uiExtension],
+      theme: [themeExtension],
+      function: [functionExtension],
+    },
   })
 }

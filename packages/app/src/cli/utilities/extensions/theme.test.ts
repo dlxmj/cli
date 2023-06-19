@@ -1,6 +1,6 @@
-import {themeExtensionFiles, parseIgnoreFile} from './theme.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {loadLocalExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
+import {themeExtensionFiles} from './theme.js'
+import themeSpec from '../../models/extensions/theme-specifications/theme.js'
+import {ThemeExtensionInstance} from '../../models/extensions/theme.js'
 import {inTemporaryDirectory, writeFile, mkdir} from '@shopify/cli-kit/node/fs'
 import {dirname, joinPath} from '@shopify/cli-kit/node/path'
 import {describe, expect, test} from 'vitest'
@@ -9,17 +9,15 @@ describe('themeExtensionConfig', () => {
   test('excludes system files', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const allSpecs = await loadLocalExtensionsSpecifications()
-      const specification = allSpecs.find((spec) => spec.identifier === 'theme')!
-      const themeExtension = new ExtensionInstance({
+      const themeExtension = new ThemeExtensionInstance({
         configuration: {
           name: 'theme extension name',
           type: 'theme' as const,
-          metafields: [],
         },
         configurationPath: '',
         directory: tmpDir,
-        specification,
+        specification: themeSpec,
+        outputBundlePath: tmpDir,
       })
 
       await mkdir(joinPath(tmpDir, 'blocks'))
@@ -35,23 +33,6 @@ describe('themeExtensionConfig', () => {
 
       // Then
       await expect(themeExtensionFiles(themeExtension)).resolves.toStrictEqual([joinPath(tmpDir, 'blocks/test.liquid')])
-    })
-  })
-})
-
-describe('parseIgnoreFile()', () => {
-  test('returns the patterns that should be ignored', async () => {
-    await inTemporaryDirectory(async (tmpDir) => {
-      // Given
-      const filePath = joinPath(tmpDir, '.shopifyignore')
-      const content = '#foo\nbar\nbaz\n'
-      await writeFile(filePath, content)
-
-      // When
-      const patterns = await parseIgnoreFile(filePath)
-
-      // Then
-      expect(patterns).toEqual(['bar', 'baz'])
     })
   })
 })

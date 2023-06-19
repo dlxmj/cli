@@ -83,7 +83,7 @@ describe('exchange code for identity token', () => {
 })
 
 describe('exchange identity token for application tokens', () => {
-  const scopes = {admin: [], partners: [], storefront: [], businessPlatform: []}
+  const scopes = {admin: [], partners: [], storefront: []}
 
   test('returns tokens for all APIs if a store is passed', async () => {
     // Given
@@ -92,7 +92,6 @@ describe('exchange identity token for application tokens', () => {
     // Need to do it 3 times because a Response can only be used once
     vi.mocked(shopifyFetch)
       .mockResolvedValue(response)
-      .mockResolvedValueOnce(response.clone())
       .mockResolvedValueOnce(response.clone())
       .mockResolvedValueOnce(response.clone())
 
@@ -116,11 +115,6 @@ describe('exchange identity token for application tokens', () => {
         expiresAt: expiredDate,
         scopes: ['scope', 'scope2'],
       },
-      'business-platform': {
-        accessToken: 'access_token',
-        expiresAt: expiredDate,
-        scopes: ['scope', 'scope2'],
-      },
     }
     expect(got).toEqual(expected)
   })
@@ -132,7 +126,6 @@ describe('exchange identity token for application tokens', () => {
     // Need to do it 3 times because a Response can only be used once
     vi.mocked(shopifyFetch)
       .mockResolvedValue(response)
-      .mockResolvedValueOnce(response.clone())
       .mockResolvedValueOnce(response.clone())
       .mockResolvedValueOnce(response.clone())
 
@@ -147,11 +140,6 @@ describe('exchange identity token for application tokens', () => {
         scopes: ['scope', 'scope2'],
       },
       'storefront-renderer': {
-        accessToken: 'access_token',
-        expiresAt: expiredDate,
-        scopes: ['scope', 'scope2'],
-      },
-      'business-platform': {
         accessToken: 'access_token',
         expiresAt: expiredDate,
         scopes: ['scope', 'scope2'],

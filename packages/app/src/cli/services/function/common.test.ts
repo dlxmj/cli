@@ -2,7 +2,7 @@ import {inFunctionContext} from './common.js'
 import {load as loadApp} from '../../models/app/loader.js'
 import {testApp, testFunctionExtension} from '../../models/app/app.test-data.js'
 import {AppInterface} from '../../models/app/app.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
+import {FunctionExtension} from '../../models/app/extensions.js'
 import {describe, vi, expect, beforeEach, test} from 'vitest'
 import {Config} from '@oclif/core'
 import {renderFatalError} from '@shopify/cli-kit/node/ui'
@@ -12,11 +12,11 @@ vi.mock('../../models/app/loader.js')
 vi.mock('@shopify/cli-kit/node/ui')
 
 let app: AppInterface
-let ourFunction: ExtensionInstance
+let ourFunction: FunctionExtension
 
 beforeEach(async () => {
   ourFunction = await testFunctionExtension()
-  app = testApp({allExtensions: [ourFunction]})
+  app = testApp({extensions: {ui: [], theme: [], function: [ourFunction]}})
   vi.mocked(loadApp).mockResolvedValue(app)
   vi.mocked(renderFatalError).mockReturnValue('')
 })
@@ -45,12 +45,12 @@ describe('ensure we are within a function context', () => {
     let ranCallback = false
 
     // When
-    await expect(
-      inFunctionContext(new Config({root: ''}), 'random/dir', async (_app, _fun) => {
-        ranCallback = true
-      }),
-    ).rejects.toThrowError()
+    await inFunctionContext(new Config({root: ''}), 'random/dir', async (_app, _fun) => {
+      ranCallback = true
+    })
 
+    // Then
     expect(ranCallback).toBe(false)
+    expect(renderFatalError).toHaveBeenCalledOnce()
   })
 })

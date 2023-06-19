@@ -20,7 +20,6 @@ mutation ExtensionCreate(
       type
       title
       draftVersion {
-        config
         registrationId
         lastUserInteractionAt
         validationErrors {

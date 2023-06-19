@@ -2,12 +2,13 @@ import {
   FileWatcherOptions,
   setupBundlerAndFileWatcher,
   setupConfigWatcher,
-  setupDraftableExtensionBundler,
+  setupNonPreviewableExtensionBundler,
 } from './bundler.js'
 import * as bundle from '../../extensions/bundle.js'
 import {testUIExtension} from '../../../models/app/app.test-data.js'
+import {UIExtension} from '../../../models/app/extensions.js'
+import {loadLocalUIExtensionsSpecifications} from '../../../models/extensions/specifications.js'
 import {updateExtensionConfig, updateExtensionDraft} from '../update-extension.js'
-import {loadLocalExtensionsSpecifications} from '../../../models/extensions/load-specifications.js'
 import {describe, expect, test, vi} from 'vitest'
 import chokidar from 'chokidar'
 import {BuildResult} from 'esbuild'
@@ -69,7 +70,7 @@ describe('setupBundlerAndFileWatcher()', () => {
     expect(bundle.bundleExtension).toHaveBeenCalledWith(
       expect.objectContaining({
         minify: false,
-        outputPath: 'directory/path/1/dist/main.js',
+        outputBundlePath: 'directory/path/1/dist/main.js',
         stdin: {
           contents: "import './src/index.js';",
           resolveDir: 'directory/path/1',
@@ -92,7 +93,7 @@ describe('setupBundlerAndFileWatcher()', () => {
     expect(bundle.bundleExtension).toHaveBeenCalledWith(
       expect.objectContaining({
         minify: false,
-        outputPath: 'directory/path/2/dist/main.js',
+        outputBundlePath: 'directory/path/2/dist/main.js',
         stdin: {
           contents: "import './src/index.js';",
           resolveDir: 'directory/path/2',
@@ -205,7 +206,7 @@ describe('setupBundlerAndFileWatcher()', () => {
 })
 
 describe('setupConfigWatcher()', async () => {
-  const mockExtension = await testUIExtension({
+  const mockExtension: UIExtension = await testUIExtension({
     devUUID: '1',
     directory: 'directory/path/1',
   })
@@ -214,7 +215,7 @@ describe('setupConfigWatcher()', async () => {
   const registrationId = 'mock-registration-id'
   const stdout = new Writable()
   const stderr = new Writable()
-  const specifications = await loadLocalExtensionsSpecifications()
+  const specifications = await loadLocalUIExtensionsSpecifications()
 
   test('starts watching the configuration file', async () => {
     const chokidarCloseSpy = vi.fn()
@@ -343,7 +344,7 @@ describe('setupConfigWatcher()', async () => {
 })
 
 describe('setupNonPreviewableExtensionBundler()', async () => {
-  const mockExtension = await testUIExtension({
+  const mockExtension: UIExtension = await testUIExtension({
     devUUID: '1',
     directory: 'directory/path/1',
   })
@@ -366,7 +367,7 @@ describe('setupNonPreviewableExtensionBundler()', async () => {
   test('calls bundleExtension with the correct parameters', async () => {
     vi.spyOn(bundle, 'bundleExtension').mockResolvedValue(undefined)
 
-    await setupDraftableExtensionBundler({
+    await setupNonPreviewableExtensionBundler({
       extension: mockExtension,
       app,
       url: 'mock/url',
@@ -381,7 +382,7 @@ describe('setupNonPreviewableExtensionBundler()', async () => {
     expect(bundle.bundleExtension).toHaveBeenCalledWith(
       expect.objectContaining({
         minify: false,
-        outputPath: 'directory/path/1/dist/main.js',
+        outputBundlePath: 'directory/path/1/dist/main.js',
         stdin: {
           contents: mockExtension.getBundleExtensionStdinContent(),
           resolveDir: 'directory/path/1',
@@ -400,7 +401,7 @@ describe('setupNonPreviewableExtensionBundler()', async () => {
   })
 
   test('calls updateExtensionDraft when the bundle is built successfully', async () => {
-    await setupDraftableExtensionBundler({
+    await setupNonPreviewableExtensionBundler({
       extension: mockExtension,
       app,
       url: 'mock/url',
@@ -426,7 +427,7 @@ describe('setupNonPreviewableExtensionBundler()', async () => {
   })
 
   test('does not call updateExtensionDraft when the bundle has errors', async () => {
-    await setupDraftableExtensionBundler({
+    await setupNonPreviewableExtensionBundler({
       extension: mockExtension,
       app,
       url: 'mock/url',

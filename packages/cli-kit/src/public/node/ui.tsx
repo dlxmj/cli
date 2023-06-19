@@ -265,7 +265,7 @@ export interface RenderSelectPromptOptions<T> extends Omit<SelectPromptProps<T>,
  *    Other
  *    (f) first
  *    (s) second
- *    (7) third (limit reached)
+ *    (7) third
  *    (8) fourth
  *    (9) seventh
  *    (10) tenth
@@ -381,7 +381,7 @@ export interface RenderAutocompleteOptions<T>
  *    sixteenth
  *    seventeenth
  *    eighteenth
- *    nineteenth (disabled)
+ *    nineteenth
  *    twentieth
  *    twenty-first
  *    twenty-second

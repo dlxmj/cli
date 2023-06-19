@@ -202,7 +202,7 @@ describe('getExtensionAssetMiddleware()', () => {
           extensions: [
             await testUIExtension({
               devUUID: '123abc',
-              outputPath: joinPath(tmpDir, 'dist', 'main.js'),
+              outputBundlePath: joinPath(tmpDir, 'dist', 'main.js'),
             }),
           ],
         },
@@ -236,13 +236,13 @@ describe('getExtensionAssetMiddleware()', () => {
       const response = getMockResponse()
       const devUUID = '123abc'
       const fileName = 'main.js'
-      const outputPath = joinPath(tmpDir, devUUID, fileName)
+      const outputBundlePath = joinPath(tmpDir, devUUID, fileName)
       const options = {
         devOptions: {
           extensions: [
             {
               devUUID,
-              outputPath,
+              outputBundlePath,
             },
           ],
         },
@@ -250,8 +250,8 @@ describe('getExtensionAssetMiddleware()', () => {
       } as unknown as GetExtensionsMiddlewareOptions
 
       await mkdir(joinPath(tmpDir, devUUID))
-      await touchFile(outputPath)
-      await writeFile(outputPath, `content from ${fileName}`)
+      await touchFile(outputBundlePath)
+      await writeFile(outputBundlePath, `content from ${fileName}`)
 
       await getExtensionAssetMiddleware(options)(
         getMockRequest({

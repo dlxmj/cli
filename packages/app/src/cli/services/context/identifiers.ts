@@ -23,7 +23,6 @@ export interface RemoteSource {
   type: string
   id: string
   title: string
-  draftVersion?: {config: string}
 }
 
 export interface LocalSource {

@@ -7,12 +7,12 @@ import {
 import * as extensionsCommon from '../extensions/common.js'
 import {blocks, configurationFileNames} from '../../constants.js'
 import {load as loadApp} from '../../models/app/loader.js'
+import {GenericSpecification} from '../../models/app/extensions.js'
+import {loadLocalExtensionsSpecifications} from '../../models/extensions/specifications.js'
 import * as functionBuild from '../function/build.js'
 import {testRemoteExtensionTemplates} from '../../models/app/app.test-data.js'
 import checkoutPostPurchaseExtension from '../../models/templates/ui-specifications/checkout_post_purchase.js'
 import {ExtensionTemplate} from '../../models/app/template.js'
-import {ExtensionSpecification} from '../../models/extensions/specification.js'
-import {loadLocalExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
 import {describe, expect, vi, test} from 'vitest'
 import * as output from '@shopify/cli-kit/node/output'
 import {
@@ -55,7 +55,7 @@ describe('initialize a extension', async () => {
         specifications,
       })
       const app = await loadApp({directory: tmpDir, specifications})
-      const generatedExtension = app.allExtensions[0]!
+      const generatedExtension = app.extensions.ui[0]!
 
       expect(extensionDir).toEqual(joinPath(tmpDir, 'extensions', name))
       expect(generatedExtension.configuration.name).toBe(name)
@@ -86,7 +86,7 @@ describe('initialize a extension', async () => {
       expect(vi.mocked(addNPMDependenciesIfNeeded)).toHaveBeenCalledTimes(2)
 
       const loadedApp = await loadApp({directory: tmpDir, specifications})
-      expect(loadedApp.allExtensions.length).toEqual(2)
+      expect(loadedApp.extensions.ui.length).toEqual(2)
     })
   })
 
@@ -309,8 +309,6 @@ describe('initialize a extension', async () => {
           command = "cargo wasi build --release"
           path = "target/wasm32-wasi/release/prod-discount-rust.wasm"`,
         )
-
-        await file.writeFile(joinPath(destination, 'main.rs'), `//empty`)
       })
 
       // When
@@ -324,7 +322,7 @@ describe('initialize a extension', async () => {
 
       // Then
       const app = await loadApp({directory: tmpDir, specifications})
-      const generatedFunction = app.allExtensions[0]!
+      const generatedFunction = app.extensions.function[0]!
       expect(extensionDir).toEqual(joinPath(tmpDir, 'extensions', name))
       expect(generatedFunction.configuration.name).toBe(name)
     })
@@ -346,6 +344,7 @@ describe('initialize a extension', async () => {
             `name = "my-fun-1"
           type = "order_discounts"
           api_version = "2023-01"
+
           [build]
           path = "dist/function.wasm"`,
           )
@@ -365,7 +364,7 @@ describe('initialize a extension', async () => {
 
         // Then
         const app = await loadApp({directory: tmpDir, specifications})
-        const generatedFunction = app.allExtensions[0]!
+        const generatedFunction = app.extensions.function[0]!
         expect(extensionDir).toEqual(joinPath(tmpDir, 'extensions', name))
         expect(generatedFunction.configuration.name).toBe(name)
         expect(generatedFunction.entrySourceFilePath).toBe(joinPath(extensionDir, 'src', 'index.js'))
@@ -411,7 +410,7 @@ interface CreateFromTemplateOptions {
   extensionTemplate: ExtensionTemplate
   appDirectory: string
   extensionFlavor: ExtensionFlavorValue
-  specifications: ExtensionSpecification[]
+  specifications: GenericSpecification[]
 }
 async function createFromTemplate({
   name,
@@ -434,12 +433,14 @@ async function withTemporaryApp(
   await file.inTemporaryDirectory(async (tmpDir) => {
     const appConfigurationPath = joinPath(tmpDir, configurationFileNames.app)
     const webConfigurationPath = joinPath(tmpDir, blocks.web.directoryName, blocks.web.configurationName)
+
     const appConfiguration = `
       name = "my_app"
       scopes = "read_products"
       `
     const webConfiguration = `
     type = "backend"
+
     [commands]
     build = "./build.sh"
     dev = "./test.sh"

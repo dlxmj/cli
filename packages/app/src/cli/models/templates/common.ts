@@ -1,4 +1,4 @@
-import {ExtensionFlavor} from '../app/template.js'
+import {ExtensionFlavor} from '../app/extensions.js'
 
 export function uiFlavors(path: string): ExtensionFlavor[] {
   return [

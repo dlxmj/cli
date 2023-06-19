@@ -7,7 +7,6 @@ require "shopify_cli/theme/dev_server"
 require "shopify_cli/theme/extension/host_theme"
 require "shopify_cli/theme/syncer"
 require "shopify_cli/theme/notifier"
-require "shopify_cli/theme/ignore_filter"
 
 require_relative "dev_server/local_assets"
 require_relative "dev_server/proxy_param_builder"
@@ -64,8 +63,7 @@ module ShopifyCLI
             ctx,
             extension: extension,
             project: project,
-            specification_handler: specification_handler,
-            ignore_filter: ignore_filter
+            specification_handler: specification_handler
           )
         end
 
@@ -116,7 +114,7 @@ module ShopifyCLI
         end
 
         def watcher
-          @watcher ||= Watcher.new(ctx, syncer: syncer, extension: extension, poll: poll, ignore_filter: ignore_filter)
+          @watcher ||= Watcher.new(ctx, syncer: syncer, extension: extension, poll: poll)
         end
 
         def param_builder
@@ -124,10 +122,6 @@ module ShopifyCLI
             .new
             .with_extension(extension)
             .with_syncer(syncer)
-        end
-
-        def ignore_filter
-          @ignore_filter ||= ShopifyCLI::Theme::IgnoreFilter.from_path(root)
         end
 
         def setup_server
@@ -142,8 +136,7 @@ module ShopifyCLI
         # Hooks
 
         def broadcast_hooks
-          file_handler = Hooks::FileChangeHook.new(ctx, extension: extension, syncer: syncer, notifier: notifier,
-            ignore_filter: ignore_filter)
+          file_handler = Hooks::FileChangeHook.new(ctx, extension: extension, syncer: syncer, notifier: notifier)
           [file_handler]
         end
 

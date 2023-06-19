@@ -3,7 +3,6 @@ import {ensureThemeStore} from '../../utilities/theme-store.js'
 import ThemeCommand from '../../utilities/theme-command.js'
 import {dev, refreshTokens, showDeprecationWarnings} from '../../services/dev.js'
 import {DevelopmentThemeManager} from '../../utilities/development-theme-manager.js'
-import {findOrSelectTheme} from '../../utilities/theme-selector.js'
 import {Flags} from '@oclif/core'
 import {globalFlags} from '@shopify/cli-kit/node/cli'
 
@@ -105,16 +104,13 @@ export default class Dev extends ThemeCommand {
 
     const {adminSession, storefrontToken} = await refreshTokens(store, flags.password)
 
-    if (flags.theme) {
-      const filter = {filter: {theme: flags.theme}}
-      const theme = await findOrSelectTheme(adminSession, filter)
-
-      flags = {...flags, theme: theme.id.toString()}
-    } else {
+    if (!flags.theme) {
       const theme = await new DevelopmentThemeManager(adminSession).findOrCreate()
-      const overwriteJson = flags['theme-editor-sync'] && theme.createdAtRuntime
-
-      flags = {...flags, theme: theme.id.toString(), 'overwrite-json': overwriteJson}
+      flags = {
+        ...flags,
+        theme: theme.id.toString(),
+        'overwrite-json': Boolean(flags['theme-editor-sync']) && theme.createdAtRuntime,
+      }
     }
 
     const flagsToPass = this.passThroughFlags(flags, {allowedFlags: Dev.cli2Flags})

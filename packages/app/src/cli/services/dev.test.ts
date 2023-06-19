@@ -1,15 +1,15 @@
-import {devDraftableExtensionTarget} from './dev.js'
-import {setupConfigWatcher, setupDraftableExtensionBundler} from './dev/extension/bundler.js'
+import {devNonPreviewableExtensionTarget} from './dev.js'
+import {setupConfigWatcher, setupNonPreviewableExtensionBundler} from './dev/extension/bundler.js'
 import {testApp, testUIExtension} from '../models/app/app.test-data.js'
-import {loadLocalExtensionsSpecifications} from '../models/extensions/load-specifications.js'
+import {loadLocalUIExtensionsSpecifications} from '../models/extensions/specifications.js'
 import {describe, expect, test, vi} from 'vitest'
 import {AbortController} from '@shopify/cli-kit/node/abort'
 import {Writable} from 'node:stream'
 
 vi.mock('./dev/extension/bundler.js')
 
-describe('devDraftableExtensionTarget()', () => {
-  test('calls setupDraftableExtensionBundler and setupConfigWatcher on each extension', async () => {
+describe('devNonPreviewableExtensionTarget()', () => {
+  test('calls setupNonPreviewableExtensionBundler and setupConfigWatcher on each extension', async () => {
     const abortController = new AbortController()
     const stdout = new Writable()
     const stderr = new Writable()
@@ -28,9 +28,9 @@ describe('devDraftableExtensionTarget()', () => {
     const remoteExtensions = {} as any
     remoteExtensions[extension1.localIdentifier] = 'mock-registration-id-1'
     remoteExtensions[extension2.localIdentifier] = 'mock-registration-id-2'
-    const specifications = await loadLocalExtensionsSpecifications()
+    const specifications = await loadLocalUIExtensionsSpecifications()
 
-    const process = devDraftableExtensionTarget({
+    const process = devNonPreviewableExtensionTarget({
       extensions,
       app,
       url: 'mock-url',
@@ -43,7 +43,7 @@ describe('devDraftableExtensionTarget()', () => {
     await process.action(stdout, stderr, abortController.signal)
 
     extensions.forEach((ext) => {
-      expect(setupDraftableExtensionBundler).toHaveBeenCalledWith({
+      expect(setupNonPreviewableExtensionBundler).toHaveBeenCalledWith({
         extension: ext,
         token: 'mock-token',
         apiKey: 'mock-api-key',

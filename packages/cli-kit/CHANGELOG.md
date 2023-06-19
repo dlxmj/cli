@@ -1,12 +1,27 @@
 # @shopify/cli-kit
 
-## 3.47.0-pre.0
+## 3.46.5
+
+## 3.46.4
 
 ### Patch Changes
 
-- ad3894aea: Fix an issue in `shopify theme dev` and `shopify app dev` that was affecting image loading on local servers
-- ca2461e94: Fix theme dev re-authentication
-- 4ded88051: Show extensions as disabled during generation when they have reached their limit
+- 11315ec46: Remove image proxying through local server to enable proper functioning of Liquid filters
+
+## 3.46.3
+
+### Patch Changes
+
+- e7f248893: Fix an issue in `shopify theme dev` and `shopify app dev` that was affecting image loading on local servers
+- e7f248893: Fix an issue in `shopify theme dev` that was affecting asset loading on local servers, in some shops
+
+## 3.46.2
+
+### Patch Changes
+
+- fc0b6b10a: Fix theme dev re-authentication
+
+## 3.46.1
 
 ## 3.46.0
 

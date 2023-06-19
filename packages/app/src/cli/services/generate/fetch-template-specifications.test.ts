@@ -10,10 +10,10 @@ describe('fetchTemplateSpecifications', () => {
   test('returns the remote and local specs', async () => {
     // Given
     vi.mocked(partnersRequest).mockResolvedValue({templateSpecifications: testRemoteExtensionTemplates})
-    const enabledSpecifications = ['checkout_ui_extension', 'theme', 'function']
+    const enabledLocalTemplates = ['checkout_ui_extension', 'theme']
 
     // When
-    const got: ExtensionTemplate[] = await fetchExtensionTemplates('token', 'apiKey', enabledSpecifications)
+    const got: ExtensionTemplate[] = await fetchExtensionTemplates('token', enabledLocalTemplates)
 
     // Then
     expect(got.length).toEqual(6)
@@ -24,8 +24,5 @@ describe('fetchTemplateSpecifications', () => {
     expect(identifiers).toContain('order_discounts')
     expect(identifiers).toContain('theme_app_extension')
     expect(identifiers).toContain('checkout_ui')
-
-    // Since the ui_extension specification is not enabled, this template should not be included.
-    expect(identifiers).not.toContain('ui_extension')
   })
 })

@@ -1,8 +1,8 @@
 import {outputEnv} from './app/env/show.js'
 import {CachedAppInfo, getAppInfo} from './local-storage.js'
 import {AppInterface} from '../models/app/app.js'
+import {FunctionExtension, ThemeExtension, UIExtension} from '../models/app/extensions.js'
 import {configurationFileNames} from '../constants.js'
-import {ExtensionInstance} from '../models/extensions/extension-instance.js'
 import {platformAndArch} from '@shopify/cli-kit/node/os'
 import {checkForNewVersion} from '@shopify/cli-kit/node/node-package-manager'
 import {linesToColumns} from '@shopify/cli-kit/common/string'
@@ -132,11 +132,15 @@ class AppInfo {
       })
     }
 
-    augmentWithExtensions(this.app.allExtensions, this.extensionSubSection.bind(this))
+    augmentWithExtensions(this.app.extensions.ui, this.uiExtensionSubSection.bind(this))
+    augmentWithExtensions(this.app.extensions.theme, this.themeExtensionSubSection.bind(this))
+    augmentWithExtensions(this.app.extensions.function, this.functionExtensionSubSection.bind(this))
+
+    const allExtensions = [...this.app.extensions.ui, ...this.app.extensions.theme, ...this.app.extensions.function]
 
     if (this.app.errors?.isEmpty() === false) {
       body += `\n\n${outputContent`${outputToken.subheading('Extensions with errors')}`.value}`
-      this.app.allExtensions.forEach((extension) => {
+      allExtensions.forEach((extension) => {
         body += `${this.invalidExtensionSubSection(extension)}`
       })
     }
@@ -165,7 +169,7 @@ class AppInfo {
     return `${subtitle}\n${linesToColumns([toplevel, ...sublevels])}${errorContent}`
   }
 
-  extensionSubSection(extension: ExtensionInstance): string {
+  uiExtensionSubSection(extension: UIExtension): string {
     const config = extension.configuration
     const details = [
       [`📂 ${config.name}`, relativePath(this.app.directory, extension.directory)],
@@ -178,7 +182,27 @@ class AppInfo {
     return `\n${linesToColumns(details)}`
   }
 
-  invalidExtensionSubSection(extension: ExtensionInstance): string {
+  functionExtensionSubSection(extension: FunctionExtension): string {
+    const config = extension.configuration
+    const details = [
+      [`📂 ${config.name}`, relativePath(this.app.directory, extension.directory)],
+      ['     config file', relativePath(extension.directory, extension.configurationPath)],
+    ]
+
+    return `\n${linesToColumns(details)}`
+  }
+
+  themeExtensionSubSection(extension: ThemeExtension): string {
+    const config = extension.configuration
+    const details = [
+      [`📂 ${config.name}`, relativePath(this.app.directory, extension.directory)],
+      ['     config file', relativePath(extension.directory, extension.configurationPath)],
+    ]
+
+    return `\n${linesToColumns(details)}`
+  }
+
+  invalidExtensionSubSection(extension: UIExtension | FunctionExtension | ThemeExtension): string {
     const error = this.app.errors?.getError(extension.configurationPath)
     if (!error) return ''
     const details = [

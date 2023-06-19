@@ -1,19 +1,44 @@
 # @shopify/theme
 
-## 3.47.0-pre.0
-
-### Minor Changes
-
-- 0224abe16: Introduce `shopify theme update init` and `shopify theme update check` commands
+## 3.46.5
 
 ### Patch Changes
 
-- ad3894aea: Fix an issue in `shopify theme dev` and `shopify app dev` that was affecting image loading on local servers
-- ca2461e94: Fix theme dev re-authentication
-- Updated dependencies [ad3894aea]
-- Updated dependencies [ca2461e94]
-- Updated dependencies [4ded88051]
-  - @shopify/cli-kit@3.47.0-pre.0
+- 3bb636692: Fix clean login on theme dev
+  - @shopify/cli-kit@3.46.5
+
+## 3.46.4
+
+### Patch Changes
+
+- 0e3d1c703: Fix session refresh for theme dev without password
+- 11315ec46: Remove image proxying through local server to enable proper functioning of Liquid filters
+- Updated dependencies [11315ec46]
+  - @shopify/cli-kit@3.46.4
+
+## 3.46.3
+
+### Patch Changes
+
+- e7f248893: Fix an issue in `shopify theme dev` and `shopify app dev` that was affecting image loading on local servers
+- e7f248893: Fix an issue in `shopify theme dev` that was affecting asset loading on local servers, in some shops
+- Updated dependencies [e7f248893]
+- Updated dependencies [e7f248893]
+  - @shopify/cli-kit@3.46.3
+
+## 3.46.2
+
+### Patch Changes
+
+- fc0b6b10a: Fix theme dev re-authentication
+- Updated dependencies [fc0b6b10a]
+  - @shopify/cli-kit@3.46.2
+
+## 3.46.1
+
+### Patch Changes
+
+- @shopify/cli-kit@3.46.1
 
 ## 3.46.0
 

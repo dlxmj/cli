@@ -1,8 +1,9 @@
 import {updateExtensionConfig, updateExtensionDraft} from './update-extension.js'
 import {ExtensionUpdateDraftMutation} from '../../api/graphql/update_draft.js'
 import {testUIExtension} from '../../models/app/app.test-data.js'
+import {UIExtension} from '../../models/app/extensions.js'
 import {findSpecificationForConfig, parseConfigurationFile} from '../../models/app/loader.js'
-import {loadLocalExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
+import {loadLocalUIExtensionsSpecifications} from '../../models/extensions/specifications.js'
 import {partnersRequest} from '@shopify/cli-kit/node/api/partners'
 import {inTemporaryDirectory, mkdir, writeFile} from '@shopify/cli-kit/node/fs'
 import {outputDebug} from '@shopify/cli-kit/node/output'
@@ -27,7 +28,7 @@ describe('updateExtensionDraft()', () => {
         type: 'web_pixel_extension',
       } as any
 
-      const mockExtension = await testUIExtension({
+      const mockExtension: UIExtension = await testUIExtension({
         devUUID: '1',
         configuration,
         directory: tmpDir,
@@ -41,7 +42,7 @@ describe('updateExtensionDraft()', () => {
         },
       })
 
-      await writeFile(mockExtension.outputPath, 'test content')
+      await writeFile(mockExtension.outputBundlePath, 'test content')
 
       await updateExtensionDraft({
         extension: mockExtension,
@@ -66,53 +67,9 @@ describe('updateExtensionDraft()', () => {
     })
   })
 
-  test('updates draft successfully when extension doesnt support esbuild', async () => {
-    await inTemporaryDirectory(async (tmpDir) => {
-      const configuration = {
-        productionApiBaseUrl: 'url1',
-        benchmarkApiBaseUrl: 'url2',
-        type: 'tax_calculation',
-      } as any
-
-      const mockExtension = await testUIExtension({
-        devUUID: '1',
-        configuration,
-        directory: tmpDir,
-      })
-
-      await mkdir(joinPath(tmpDir, 'dist'))
-
-      vi.mocked(partnersRequest).mockResolvedValue({
-        extensionUpdateDraft: {
-          userErrors: [],
-        },
-      })
-
-      await updateExtensionDraft({
-        extension: mockExtension,
-        token,
-        apiKey,
-        registrationId,
-        stderr,
-      })
-
-      expect(partnersRequest).toHaveBeenCalledWith(ExtensionUpdateDraftMutation, token, {
-        apiKey,
-        context: undefined,
-        registrationId,
-        config: '{"production_api_base_url":"url1","benchmark_api_base_url":"url2"}',
-      })
-
-      // Check if outputDebug is called with success message
-      expect(outputDebug).toHaveBeenCalledWith(
-        `Drafts updated successfully for extension: ${mockExtension.localIdentifier}`,
-      )
-    })
-  })
-
   test('handles user errors with stderr message', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
-      const mockExtension = await testUIExtension({
+      const mockExtension: UIExtension = await testUIExtension({
         devUUID: '1',
         directory: tmpDir,
         type: 'web_pixel_extension',
@@ -126,7 +83,7 @@ describe('updateExtensionDraft()', () => {
         },
       })
 
-      await writeFile(mockExtension.outputPath, 'test content')
+      await writeFile(mockExtension.outputBundlePath, 'test content')
 
       await updateExtensionDraft({
         extension: mockExtension,
@@ -143,7 +100,7 @@ describe('updateExtensionDraft()', () => {
 
 describe('updateExtensionConfig()', () => {
   test('updates draft with new config', async () => {
-    const specifications = await loadLocalExtensionsSpecifications()
+    const specifications = await loadLocalUIExtensionsSpecifications()
 
     await inTemporaryDirectory(async (tmpDir) => {
       const configuration = {
@@ -152,7 +109,7 @@ describe('updateExtensionConfig()', () => {
         type: 'web_pixel_extension',
       } as any
 
-      const mockExtension = await testUIExtension({
+      const mockExtension: UIExtension = await testUIExtension({
         devUUID: '1',
         configuration,
         directory: tmpDir,
@@ -173,7 +130,7 @@ describe('updateExtensionConfig()', () => {
         type: 'web_pixel_extension',
       } as any)
 
-      await writeFile(mockExtension.outputPath, 'test content')
+      await writeFile(mockExtension.outputBundlePath, 'test content')
 
       await updateExtensionConfig({
         extension: mockExtension,

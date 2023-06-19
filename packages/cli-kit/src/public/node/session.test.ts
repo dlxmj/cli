@@ -1,6 +1,5 @@
 import {
   ensureAuthenticatedAdmin,
-  ensureAuthenticatedBusinessPlatform,
   ensureAuthenticatedPartners,
   ensureAuthenticatedStorefront,
   ensureAuthenticatedThemes,
@@ -151,29 +150,5 @@ describe('ensureAuthenticatedTheme', () => {
 
     // Then
     expect(got).toEqual({token: 'password', storeFqdn: 'mystore.myshopify.com'})
-  })
-})
-
-describe('ensureAuthenticatedBusinessPlatform', () => {
-  test('returns only business-platform token if success', async () => {
-    // Given
-    vi.mocked(ensureAuthenticated).mockResolvedValueOnce({businessPlatform: 'business_platform'})
-
-    // When
-    const got = await ensureAuthenticatedBusinessPlatform()
-
-    // Then
-    expect(got).toEqual('business_platform')
-  })
-
-  test('throws error if there is no business_platform token', async () => {
-    // Given
-    vi.mocked(ensureAuthenticated).mockResolvedValueOnce({partners: 'partners_token'})
-
-    // When
-    const got = ensureAuthenticatedBusinessPlatform()
-
-    // Then
-    await expect(got).rejects.toThrow(`No business-platform token`)
   })
 })

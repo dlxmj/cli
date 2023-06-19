@@ -45,9 +45,13 @@ const InfoTable: FunctionComponent<InfoTableProps> = ({table}) => {
               <Text color={section.color}>{capitalize(section.header)}:</Text>
             </Box>
           )}
-          <Box marginLeft={section.header.length > 0 ? 2 : 0} flexGrow={1} flexDirection="column" gap={1}>
+          <Box marginLeft={section.header.length > 0 ? 2 : 0} flexGrow={1} flexDirection="column">
             <List margin={false} items={section.items} color={section.color} />
-            {section.helperText ? <Text color={section.color}>{section.helperText}</Text> : null}
+            {section.helperText ? (
+              <Box marginTop={1}>
+                <Text color={section.color}>{section.helperText}</Text>
+              </Box>
+            ) : null}
           </Box>
         </Box>
       ))}

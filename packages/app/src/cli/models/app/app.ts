@@ -1,5 +1,5 @@
+import {Extension, FunctionExtension, ThemeExtension, UIExtension} from './extensions.js'
 import {AppErrors} from './loader.js'
-import {ExtensionInstance} from '../extensions/extension-instance.js'
 import {zod} from '@shopify/cli-kit/node/schema'
 import {DotEnvFile} from '@shopify/cli-kit/node/dot-env'
 import {getDependencies, PackageManager, readAndParsePackageJson} from '@shopify/cli-kit/node/node-package-manager'
@@ -55,11 +55,16 @@ export interface AppInterface {
   webs: Web[]
   usesWorkspaces: boolean
   dotenv?: DotEnvFile
-  allExtensions: ExtensionInstance[]
+  extensions: {
+    ui: UIExtension[]
+    theme: ThemeExtension[]
+    function: FunctionExtension[]
+  }
   errors?: AppErrors
   hasExtensions: () => boolean
+  hasUIExtensions: () => boolean
   updateDependencies: () => Promise<void>
-  extensionsForType: (spec: {identifier: string; externalIdentifier: string}) => ExtensionInstance[]
+  extensionsForType: (spec: {identifier: string; externalIdentifier: string}) => Extension[]
 }
 
 export class App implements AppInterface {
@@ -74,7 +79,11 @@ export class App implements AppInterface {
   usesWorkspaces: boolean
   dotenv?: DotEnvFile
   errors?: AppErrors
-  allExtensions: ExtensionInstance[]
+  extensions: {
+    ui: UIExtension[]
+    theme: ThemeExtension[]
+    function: FunctionExtension[]
+  }
 
   // eslint-disable-next-line max-params
   constructor(
@@ -86,7 +95,9 @@ export class App implements AppInterface {
     configurationPath: string,
     nodeDependencies: {[key: string]: string},
     webs: Web[],
-    extensions: ExtensionInstance[],
+    ui: UIExtension[],
+    theme: ThemeExtension[],
+    functions: FunctionExtension[],
     usesWorkspaces: boolean,
     dotenv?: DotEnvFile,
     errors?: AppErrors,
@@ -100,7 +111,11 @@ export class App implements AppInterface {
     this.nodeDependencies = nodeDependencies
     this.webs = webs
     this.dotenv = dotenv
-    this.allExtensions = extensions
+    this.extensions = {
+      ui,
+      theme,
+      function: functions,
+    }
     this.errors = errors
     this.usesWorkspaces = usesWorkspaces
   }
@@ -111,11 +126,18 @@ export class App implements AppInterface {
   }
 
   hasExtensions(): boolean {
-    return this.allExtensions.length > 0
+    return (
+      this.extensions.ui.length !== 0 || this.extensions.function.length !== 0 || this.extensions.theme.length !== 0
+    )
   }
 
-  extensionsForType(specification: {identifier: string; externalIdentifier: string}): ExtensionInstance[] {
-    return this.allExtensions.filter(
+  hasUIExtensions(): boolean {
+    return this.extensions.ui.length > 0
+  }
+
+  extensionsForType(specification: {identifier: string; externalIdentifier: string}): Extension[] {
+    const allExternsions = [...this.extensions.ui, ...this.extensions.function, ...this.extensions.theme]
+    return allExternsions.filter(
       (extension) => extension.type === specification.identifier || extension.type === specification.externalIdentifier,
     )
   }
@@ -131,7 +153,7 @@ type RendererVersionResult = {name: string; version: string} | undefined | 'not_
  * @returns The version if the dependency exists.
  */
 export async function getUIExtensionRendererVersion(
-  extension: ExtensionInstance,
+  extension: UIExtension,
   app: AppInterface,
 ): Promise<RendererVersionResult> {
   // Look for the vanilla JS version of the dependency (the react one depends on it, will always be present)

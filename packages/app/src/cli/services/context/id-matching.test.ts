@@ -1,9 +1,8 @@
-/* eslint-disable @shopify/prefer-module-scope-constants */
 import {automaticMatchmaking} from './id-matching.js'
 import {ExtensionRegistration} from '../dev/create-extension.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {testFunctionExtension, testUIExtension} from '../../models/app/app.test-data.js'
-import {beforeEach, describe, expect, vi, test, beforeAll} from 'vitest'
+import {FunctionExtension, UIExtension} from '../../models/app/extensions.js'
+import {beforeEach, describe, expect, vi, test} from 'vitest'
+import {ok} from '@shopify/cli-kit/node/result'
 import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
 
 vi.mock('@shopify/cli-kit/node/session')
@@ -63,149 +62,219 @@ const REGISTRATION_D = {
   type: 'WEB_PIXEL_EXTENSION',
 }
 
-const REGISTRATION_LEGACY_FUNCTION_A = {
-  uuid: 'FUNCTION_UUID_A',
-  id: 'FUNCTION_A',
-  title: 'FUNCTION A',
-  type: 'PRODUCT_DISCOUNTS',
+const EXTENSION_A: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_A_ID',
+  localIdentifier: 'EXTENSION_A',
+  configurationPath: '',
+  directory: '',
+  type: 'checkout_post_purchase',
+  graphQLType: 'CHECKOUT_POST_PURCHASE',
+  configuration: {
+    name: 'EXTENSION A',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (target: string) => true,
+  isPreviewable: true,
+}
+
+const EXTENSION_A_2: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_A_2_ID',
+  localIdentifier: 'EXTENSION_A_2',
+  configurationPath: '',
+  directory: '',
+  type: 'checkout_post_purchase',
+  graphQLType: 'CHECKOUT_POST_PURCHASE',
+  configuration: {
+    name: 'EXTENSION A 2',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (target: string) => true,
+  isPreviewable: true,
+}
+
+const EXTENSION_B: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_B_ID',
+  localIdentifier: 'EXTENSION_B',
+  configurationPath: '',
+  directory: '',
+  type: 'product_subscription',
+  graphQLType: 'SUBSCRIPTION_MANAGEMENT',
+  configuration: {
+    name: 'EXTENSION B',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  publishURL: (_) => Promise.resolve(''),
+  surface: 'surface',
+  validate: () => Promise.resolve({} as any),
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (target: string) => true,
+  isPreviewable: true,
+}
+
+const EXTENSION_B_2: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_B_2_ID',
+  localIdentifier: 'EXTENSION_B_2',
+  configurationPath: '',
+  directory: '',
+  type: 'product_subscription',
+  graphQLType: 'SUBSCRIPTION_MANAGEMENT',
+  configuration: {
+    name: 'EXTENSION B 2',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (target: string) => true,
+  isPreviewable: true,
+}
+
+const EXTENSION_C: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_C_ID',
+  localIdentifier: 'EXTENSION_C',
+  configurationPath: '',
+  directory: '',
+  type: 'theme',
+  graphQLType: 'THEME_APP_EXTENSION',
+  configuration: {
+    name: 'EXTENSION C',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (target: string) => true,
+  isPreviewable: true,
+}
+
+const EXTENSION_D: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_D_ID',
+  localIdentifier: 'EXTENSION_D',
+  configurationPath: '',
+  directory: '',
+  type: 'web_pixel_extension',
+  graphQLType: 'WEB_PIXEL_EXTENSION',
+  configuration: {
+    name: 'EXTENSION D',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (target: string) => true,
+  isPreviewable: false,
+}
+
+const FUNCTION_A: FunctionExtension = {
+  idEnvironmentVariableName: 'FUNCTION_A_ID',
+  localIdentifier: 'FUNCTION_A',
+  configurationPath: '/function/shopify.function.extension.toml',
+  directory: '/function',
+  type: 'product_discounts',
+  graphQLType: 'PRODUCT_DISCOUNTS',
+  configuration: {
+    name: 'FUNCTION A',
+    type: 'product_discounts',
+    description: 'Function',
+    build: {
+      command: 'make build',
+      path: 'dist/index.wasm',
+    },
+    configurationUi: false,
+    apiVersion: '2022-07',
+  },
+  buildCommand: 'make build',
+  buildWasmPath: '/function/dist/index.wasm',
+  inputQueryPath: '/function/input.graphql',
+  isJavaScript: false,
+  externalType: 'function',
+  usingExtensionsFramework: false,
+  publishURL: (_) => Promise.resolve(''),
 }
 
 const REGISTRATION_FUNCTION_A = {
   uuid: 'FUNCTION_UUID_A',
   id: 'FUNCTION_A',
   title: 'FUNCTION A',
-  type: 'FUNCTION',
-  draftVersion: {
-    config: JSON.stringify({
-      legacy_function_id: 'LEGACY_FUNCTION_ULID_A',
-      legacy_function_uuid: 'LEGACY_FUNCTION_UUID_A',
-    }),
-  },
+  type: 'PRODUCT_DISCOUNTS',
 }
-
-let EXTENSION_A: ExtensionInstance
-let EXTENSION_A_2: ExtensionInstance
-let EXTENSION_B: ExtensionInstance
-let EXTENSION_B_2: ExtensionInstance
-let EXTENSION_C: ExtensionInstance
-let EXTENSION_D: ExtensionInstance
-let LEGACY_FUNCTION_A: ExtensionInstance
-let FUNCTION_A: ExtensionInstance
-
-beforeAll(async () => {
-  EXTENSION_A = await testUIExtension({
-    configurationPath: '',
-    directory: '/EXTENSION_A',
-    configuration: {
-      name: 'EXTENSION A',
-      type: 'checkout_post_purchase',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  EXTENSION_A_2 = await testUIExtension({
-    configurationPath: '',
-    directory: '/EXTENSION_A_2',
-    configuration: {
-      name: 'EXTENSION A 2',
-      type: 'checkout_post_purchase',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  EXTENSION_B = await testUIExtension({
-    configurationPath: '',
-    directory: '/EXTENSION_B',
-    configuration: {
-      name: 'EXTENSION B',
-      type: 'product_subscription',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  EXTENSION_B_2 = await testUIExtension({
-    configurationPath: '',
-    directory: '/EXTENSION_B_2',
-    configuration: {
-      name: 'EXTENSION B 2',
-      type: 'product_subscription',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  EXTENSION_C = await testUIExtension({
-    configurationPath: '',
-    directory: '/EXTENSION_C',
-    configuration: {
-      name: 'EXTENSION C',
-      type: 'theme',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  EXTENSION_D = await testUIExtension({
-    configurationPath: '',
-    directory: '/EXTENSION_D',
-    configuration: {
-      name: 'EXTENSION D',
-      type: 'web_pixel_extension',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    outputPath: '',
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  LEGACY_FUNCTION_A = await testFunctionExtension({
-    dir: '/FUNCTION_A',
-    config: {
-      name: 'FUNCTION A',
-      type: 'product_discounts',
-      description: 'Function',
-      build: {
-        command: 'make build',
-        path: 'dist/index.wasm',
-      },
-      configurationUi: false,
-      apiVersion: '2022-07',
-      metafields: [],
-    },
-    usingExtensionFramework: false,
-  })
-
-  FUNCTION_A = await testFunctionExtension({
-    dir: '/FUNCTION_A',
-    config: {
-      name: 'FUNCTION A',
-      type: 'function',
-      description: 'Function',
-      build: {
-        command: 'make build',
-        path: 'dist/index.wasm',
-      },
-      configurationUi: false,
-      apiVersion: '2022-07',
-      metafields: [],
-    },
-    usingExtensionFramework: false,
-  })
-})
 
 describe('automaticMatchmaking: some local, no remote ones', () => {
   test('creates all local extensions', async () => {
@@ -612,69 +681,13 @@ describe('automaticMatchmaking: functions', () => {
 
   test('updates existing function', async () => {
     // When
-    const got = await automaticMatchmaking([LEGACY_FUNCTION_A], [REGISTRATION_LEGACY_FUNCTION_A], {}, 'id')
+    const got = await automaticMatchmaking([FUNCTION_A], [REGISTRATION_FUNCTION_A], {}, 'id')
 
     // Then
     const expected = {
       identifiers: {FUNCTION_A: 'FUNCTION_A'},
       toConfirm: [],
       toCreate: [],
-      toManualMatch: {local: [], remote: []},
-    }
-    expect(got).toEqual(expected)
-  })
-})
-
-describe('automaticMatchmaking: migrates functions with legacy IDs to extension IDs', () => {
-  test('updates function when using legacy ID and value exists on remote', async () => {
-    // When
-    const got = await automaticMatchmaking(
-      [FUNCTION_A],
-      [REGISTRATION_FUNCTION_A],
-      {FUNCTION_A: 'LEGACY_FUNCTION_ULID_A'},
-      'id',
-    )
-
-    // Then
-    const expected = {
-      identifiers: {FUNCTION_A: 'FUNCTION_UUID_A'},
-      toConfirm: [],
-      toCreate: [],
-      toManualMatch: {local: [], remote: []},
-    }
-
-    expect(got).toEqual(expected)
-  })
-
-  test('updates function when using legacy UUID and value exists on remote', async () => {
-    // When
-    const got = await automaticMatchmaking(
-      [FUNCTION_A],
-      [REGISTRATION_FUNCTION_A],
-      {FUNCTION_A: 'LEGACY_FUNCTION_UUID_A'},
-      'id',
-    )
-
-    // Then
-    const expected = {
-      identifiers: {FUNCTION_A: 'FUNCTION_UUID_A'},
-      toConfirm: [],
-      toCreate: [],
-      toManualMatch: {local: [], remote: []},
-    }
-
-    expect(got).toEqual(expected)
-  })
-
-  test('creates local function when it does not exist on remote', async () => {
-    // When
-    const got = await automaticMatchmaking([FUNCTION_A], [], {}, 'id')
-
-    // Then
-    const expected = {
-      identifiers: {},
-      toConfirm: [],
-      toCreate: [FUNCTION_A],
       toManualMatch: {local: [], remote: []},
     }
     expect(got).toEqual(expected)

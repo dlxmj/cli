@@ -6,7 +6,6 @@ export const ExtensionUpdateDraftMutation = gql`
       input: {apiKey: $apiKey, registrationId: $registrationId, config: $config, context: $context}
     ) {
       extensionVersion {
-        config
         registrationId
         context
         lastUserInteractionAt

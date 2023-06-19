@@ -8,9 +8,6 @@ export const AllAppExtensionRegistrationsQuery = gql`
         uuid
         title
         type
-        draftVersion {
-          config
-        }
       }
       dashboardManagedExtensionRegistrations {
         id
@@ -37,15 +34,6 @@ interface ExtensionRegistration {
   uuid: string
   title: string
   type: string
-  draftVersion?: {
-    config: string
-    registrationId: string
-    lastUserInteractionAt: string
-    validationErrors: {
-      field: string[]
-      message: string
-    }[]
-  }
 }
 
 export interface AllAppExtensionRegistrationsQuerySchema {

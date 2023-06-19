@@ -1,7 +1,7 @@
 import {getRedirectUrl, getExtensionPointRedirectUrl} from './utilities.js'
 import {ExtensionDevOptions} from '../../extension.js'
 import {testUIExtension} from '../../../../models/app/app.test-data.js'
-import {ExtensionInstance} from '../../../../models/extensions/extension-instance.js'
+import {UIExtension} from '../../../../models/app/extensions.js'
 import {describe, expect, test} from 'vitest'
 
 describe('getRedirectURL()', () => {
@@ -63,7 +63,7 @@ describe('getExtensionPointRedirectUrl()', () => {
     (extensionPoint: string) => {
       const extension = {
         devUUID: '123abc',
-      } as ExtensionInstance
+      } as UIExtension
 
       const options = {
         storeFqdn: 'example.myshopify.com',
@@ -83,7 +83,7 @@ describe('getExtensionPointRedirectUrl()', () => {
   test('returns Checkout dev server URL if the extension point targets Checkout', () => {
     const extension = {
       devUUID: '123abc',
-    } as ExtensionInstance
+    } as UIExtension
 
     const options = {
       storeFqdn: 'example.myshopify.com',
@@ -99,7 +99,7 @@ describe('getExtensionPointRedirectUrl()', () => {
   test('returns undefined if the extension point surface is not supported', () => {
     const extension = {
       devUUID: '123abc',
-    } as ExtensionInstance
+    } as UIExtension
 
     const options = {
       storeFqdn: 'example.myshopify.com',

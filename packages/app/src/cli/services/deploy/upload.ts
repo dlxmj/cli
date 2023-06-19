@@ -1,5 +1,6 @@
 import {themeExtensionConfig as generateThemeExtensionConfig} from './theme-extension-config.js'
 import {Identifiers, IdentifiersExtensions} from '../../models/app/identifiers.js'
+import {FunctionExtension, ThemeExtension} from '../../models/app/extensions.js'
 import {
   UploadUrlGenerateMutation,
   UploadUrlGenerateMutationSchema,
@@ -25,19 +26,15 @@ import {
   AppFunctionSetMutationSchema,
   AppFunctionSetVariables,
 } from '../../api/graphql/functions/app_function_set.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {FunctionConfigType} from '../../models/extensions/specifications/function.js'
 import {functionProxyRequest, partnersRequest} from '@shopify/cli-kit/node/api/partners'
 import {randomUUID} from '@shopify/cli-kit/node/crypto'
 import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
 import {fileExists, readFile, readFileSync} from '@shopify/cli-kit/node/fs'
 import {fetch, formData} from '@shopify/cli-kit/node/http'
 import {AbortError, BugError} from '@shopify/cli-kit/node/error'
-import {formatPackageManagerCommand, outputContent, outputToken} from '@shopify/cli-kit/node/output'
+import {outputContent, outputToken} from '@shopify/cli-kit/node/output'
 import {AlertCustomSection, ListToken, TokenItem} from '@shopify/cli-kit/node/ui'
 import {partition} from '@shopify/cli-kit/common/collection'
-import {getPackageManager} from '@shopify/cli-kit/node/node-package-manager'
-import {cwd} from '@shopify/cli-kit/node/path'
 
 interface DeployThemeExtensionOptions {
   /** The application API key */
@@ -55,7 +52,7 @@ interface DeployThemeExtensionOptions {
  * @param options - The upload options
  */
 export async function uploadThemeExtensions(
-  themeExtensions: ExtensionInstance[],
+  themeExtensions: ThemeExtension[],
   options: DeployThemeExtensionOptions,
 ): Promise<void> {
   const {apiKey, identifiers, token} = options
@@ -146,9 +143,7 @@ export async function uploadExtensionsBundle(
   }
 
   const mutation = CreateDeployment
-  const result: CreateDeploymentSchema = await handlePartnersErrors(() =>
-    partnersRequest(mutation, options.token, variables),
-  )
+  const result: CreateDeploymentSchema = await partnersRequest(mutation, options.token, variables)
 
   if (result.deploymentCreate?.userErrors?.length > 0) {
     const customSections: AlertCustomSection[] = deploymentErrorsToCustomSections(
@@ -291,10 +286,7 @@ export async function getExtensionUploadURL(apiKey: string, deploymentUUID: stri
     bundleFormat: 1,
   }
 
-  const result: GenerateSignedUploadUrlSchema = await handlePartnersErrors(() =>
-    partnersRequest(mutation, token, variables),
-  )
-
+  const result: GenerateSignedUploadUrlSchema = await partnersRequest(mutation, token, variables)
   if (result.deploymentGenerateSignedUploadUrl?.userErrors?.length > 0) {
     const errors = result.deploymentGenerateSignedUploadUrl.userErrors.map((error) => error.message).join(', ')
     throw new AbortError(errors)
@@ -323,7 +315,7 @@ interface UploadFunctionExtensionsOptions {
  * @returns A promise that resolves with the identifiers.
  */
 export async function uploadFunctionExtensions(
-  extensions: ExtensionInstance<FunctionConfigType>[],
+  extensions: FunctionExtension[],
   options: UploadFunctionExtensionsOptions,
 ): Promise<Identifiers> {
   let identifiers = options.identifiers
@@ -359,10 +351,10 @@ interface UploadFunctionExtensionOptions {
 }
 
 async function uploadFunctionExtension(
-  extension: ExtensionInstance<FunctionConfigType>,
+  extension: FunctionExtension,
   options: UploadFunctionExtensionOptions,
 ): Promise<string> {
-  const {url} = await uploadWasmBlob(extension.localIdentifier, extension.outputPath, options.apiKey, options.token)
+  const {url} = await uploadWasmBlob(extension, options.apiKey, options.token)
 
   let inputQuery: string | undefined
   if (await fileExists(extension.inputQueryPath)) {
@@ -374,7 +366,7 @@ async function uploadFunctionExtension(
     // NOTE: This is a shim to support CLI projects that currently use the UUID instead of the ULID
     ...(options.identifier?.includes('-') ? {legacyUuid: options.identifier} : {id: options.identifier}),
     title: extension.configuration.name,
-    description: extension.configuration.description ?? '',
+    description: extension.configuration.description,
     apiType: extension.configuration.type,
     apiVersion: extension.configuration.apiVersion,
     inputQuery,
@@ -405,28 +397,29 @@ ${outputToken.json(userErrors)}
 }
 
 export async function uploadWasmBlob(
-  extensionIdentifier: string,
-  wasmPath: string,
+  extension: FunctionExtension,
   apiKey: string,
   token: string,
 ): Promise<{url: string; moduleId: string}> {
   const {url, moduleId, headers, maxSize} = await getFunctionExtensionUploadURL({apiKey, token})
   headers['Content-Type'] = 'application/wasm'
 
-  const functionContent = await readFile(wasmPath, {})
+  const functionContent = await readFile(extension.buildWasmPath, {})
   const res = await fetch(url, {body: functionContent, headers, method: 'PUT'})
   const resBody = res.body?.read()?.toString() || ''
 
   if (res.status === 200) {
     return {url, moduleId}
   } else if (res.status === 400 && resBody.includes('EntityTooLarge')) {
-    const errorMessage = outputContent`The size of the Wasm binary file for Function ${extensionIdentifier} is too large. It must be less than ${maxSize}.`
+    const errorMessage = outputContent`The size of the Wasm binary file for Function ${extension.localIdentifier} is too large. It must be less than ${maxSize}.`
     throw new AbortError(errorMessage)
   } else if (res.status >= 400 && res.status < 500) {
-    const errorMessage = outputContent`Something went wrong uploading the Function ${extensionIdentifier}. The server responded with status ${res.status.toString()} and body: ${resBody}`
+    const errorMessage = outputContent`Something went wrong uploading the Function ${
+      extension.localIdentifier
+    }. The server responded with status ${res.status.toString()} and body: ${resBody}`
     throw new BugError(errorMessage)
   } else {
-    const errorMessage = outputContent`Something went wrong uploading the Function ${extensionIdentifier}. Try again.`
+    const errorMessage = outputContent`Something went wrong uploading the Function ${extension.localIdentifier}. Try again.`
     throw new AbortError(errorMessage)
   }
 }
@@ -446,28 +439,45 @@ interface GetFunctionExtensionUploadURLOutput {
 async function getFunctionExtensionUploadURL(
   options: GetFunctionExtensionUploadURLOptions,
 ): Promise<GetFunctionExtensionUploadURLOutput> {
-  const res: UploadUrlGenerateMutationSchema = await handlePartnersErrors(() =>
-    functionProxyRequest(options.apiKey, UploadUrlGenerateMutation, options.token),
+  const res: UploadUrlGenerateMutationSchema = await functionProxyRequest(
+    options.apiKey,
+    UploadUrlGenerateMutation,
+    options.token,
   )
   return res.data.uploadUrlGenerate
 }
 
-async function handlePartnersErrors<T>(request: () => Promise<T>): Promise<T> {
-  try {
-    const result = await request()
-    return result
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (error: any) {
-    if (error.errors?.[0]?.extensions?.type === 'unsupported_client_version') {
-      const packageManager = await getPackageManager(cwd())
+export async function functionConfiguration(
+  extension: FunctionExtension,
+  moduleId: string,
+  appKey: string,
+): Promise<object> {
+  let inputQuery: string | undefined
+  if (await fileExists(extension.inputQueryPath)) {
+    inputQuery = await readFile(extension.inputQueryPath)
+  }
 
-      throw new AbortError(
-        {bold: '`deploy` is no longer supported in this CLI version.'},
-        ['Upgrade your CLI version to use the', {command: 'deploy'}, 'command.'],
-        [['Run', {command: formatPackageManagerCommand(packageManager, 'shopify upgrade')}]],
-      )
-    }
-
-    throw error
+  return {
+    title: extension.configuration.name,
+    module_id: moduleId,
+    description: extension.configuration.description,
+    app_key: appKey,
+    api_type: extension.configuration.type,
+    api_version: extension.configuration.apiVersion,
+    input_query: inputQuery,
+    input_query_variables: extension.configuration.input?.variables
+      ? {
+          single_json_metafield: extension.configuration.input.variables,
+        }
+      : undefined,
+    ui: extension.configuration.ui?.paths
+      ? {
+          app_bridge: {
+            details_path: extension.configuration.ui.paths.details,
+            create_path: extension.configuration.ui.paths.create,
+          },
+        }
+      : undefined,
+    enable_creation_ui: extension.configuration.ui?.enable_create ?? true,
   }
 }

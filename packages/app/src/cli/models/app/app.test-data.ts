@@ -1,12 +1,15 @@
 import {App, AppInterface} from './app.js'
+import {FunctionExtension, ThemeExtension, UIExtension} from './extensions.js'
 import {ExtensionTemplate} from './template.js'
+import {UIExtensionInstance, UIExtensionSpec} from '../extensions/ui.js'
+import {FunctionConfigType, FunctionInstance} from '../extensions/functions.js'
+import {ThemeExtensionInstance} from '../extensions/theme.js'
+import themeSpec from '../extensions/theme-specifications/theme.js'
+import {loadLocalExtensionsSpecifications} from '../extensions/specifications.js'
 import {RemoteSpecification} from '../../api/graphql/extension_specifications.js'
 import themeExtension from '../templates/theme-specifications/theme.js'
 import checkoutPostPurchaseExtension from '../templates/ui-specifications/checkout_post_purchase.js'
 import checkoutUIExtension from '../templates/ui-specifications/checkout_ui_extension.js'
-import {ExtensionInstance} from '../extensions/extension-instance.js'
-import {loadLocalExtensionsSpecifications} from '../extensions/load-specifications.js'
-import {FunctionConfigType} from '../extensions/specifications/function.js'
 import UIExtensionTemplate from '../templates/ui-specifications/ui_extension.js'
 
 export function testApp(app: Partial<AppInterface> = {}): AppInterface {
@@ -19,7 +22,9 @@ export function testApp(app: Partial<AppInterface> = {}): AppInterface {
     app.configurationPath ?? '/tmp/project/shopify.app.toml',
     app.nodeDependencies ?? {},
     app.webs ?? [],
-    app.allExtensions ?? [],
+    app.extensions?.ui ?? [],
+    app.extensions?.theme ?? [],
+    app.extensions?.function ?? [],
     app.usesWorkspaces ?? false,
     app.dotenv,
     app.errors,
@@ -27,13 +32,16 @@ export function testApp(app: Partial<AppInterface> = {}): AppInterface {
   if (app.updateDependencies) {
     Object.getPrototypeOf(newApp).updateDependencies = app.updateDependencies
   }
+  if (app.hasUIExtensions) {
+    Object.getPrototypeOf(newApp).hasUIExtensions = app.hasUIExtensions
+  }
   if (app.extensionsForType) {
     Object.getPrototypeOf(newApp).extensionsForType = app.extensionsForType
   }
   return newApp
 }
 
-export async function testUIExtension(uiExtension: Partial<ExtensionInstance> = {}): Promise<ExtensionInstance> {
+export async function testUIExtension(uiExtension: Partial<UIExtension> = {}): Promise<UIExtension> {
   const directory = uiExtension?.directory ?? '/tmp/project/extensions/test-ui-extension'
 
   const configuration = uiExtension?.configuration ?? {
@@ -47,43 +55,35 @@ export async function testUIExtension(uiExtension: Partial<ExtensionInstance> = 
     },
   }
   const configurationPath = uiExtension?.configurationPath ?? `${directory}/shopify.ui.extension.toml`
-  const entryPath = uiExtension?.entrySourceFilePath ?? `${directory}/src/index.js`
+  const entrySourceFilePath = uiExtension?.entrySourceFilePath ?? `${directory}/src/index.js`
 
   const allSpecs = await loadLocalExtensionsSpecifications()
-  const specification = allSpecs.find((spec) => spec.identifier === configuration.type)!
+  const specification = allSpecs.find((spec) => spec.identifier === configuration.type) as UIExtensionSpec
 
-  const extension = new ExtensionInstance({
+  const extension = new UIExtensionInstance({
     configuration,
     configurationPath,
-    entryPath,
+    entryPath: entrySourceFilePath,
     directory,
     specification,
   })
-
   extension.devUUID = uiExtension?.devUUID ?? 'test-ui-extension-uuid'
   return extension
 }
 
-export async function testThemeExtensions(): Promise<ExtensionInstance> {
+export async function testThemeExtensions(): Promise<ThemeExtension> {
   const configuration = {
     name: 'theme extension name',
     type: 'theme' as const,
-    metafields: [],
   }
 
-  const allSpecs = await loadLocalExtensionsSpecifications()
-  const specification = allSpecs.find((spec) => spec.identifier === 'theme')!
-
-  const extension = new ExtensionInstance({
+  return new ThemeExtensionInstance({
     configuration,
     configurationPath: '',
     directory: './my-extension',
-    specification,
+    specification: themeSpec,
+    outputBundlePath: './my-extension',
   })
-
-  extension.outputPath = './my-extension'
-
-  return extension
 }
 
 function defaultFunctionConfiguration(): FunctionConfigType {
@@ -96,35 +96,23 @@ function defaultFunctionConfiguration(): FunctionConfigType {
     },
     apiVersion: '2022-07',
     configurationUi: true,
-    metafields: [],
   }
 }
 
 interface TestFunctionExtensionOptions {
   dir?: string
   config?: FunctionConfigType
-  entryPath?: string
-  usingExtensionFramework?: boolean
 }
 
-export async function testFunctionExtension(
-  opts: TestFunctionExtensionOptions = {},
-): Promise<ExtensionInstance<FunctionConfigType>> {
+export async function testFunctionExtension(opts: TestFunctionExtensionOptions = {}): Promise<FunctionExtension> {
   const directory = opts.dir ?? '/tmp/project/extensions/my-function'
   const configuration = opts.config ?? defaultFunctionConfiguration()
 
-  const allSpecs = await loadLocalExtensionsSpecifications()
-  const specification = allSpecs.find((spec) => spec.identifier === 'function')!
-
-  const extension = new ExtensionInstance({
+  return new FunctionInstance({
     configuration,
     configurationPath: '',
-    entryPath: opts.entryPath,
     directory,
-    specification,
   })
-  extension.usingExtensionsFramework = opts.usingExtensionFramework ?? false
-  return extension
 }
 
 export const testRemoteSpecifications: RemoteSpecification[] = [
@@ -246,22 +234,6 @@ export const testRemoteSpecifications: RemoteSpecification[] = [
     options: {
       managementExperience: 'dashboard',
       registrationLimit: 100,
-    },
-  },
-  {
-    name: 'function',
-    externalName: 'function',
-    identifier: 'function',
-    externalIdentifier: 'function',
-    gated: false,
-    options: {
-      managementExperience: 'cli',
-      registrationLimit: 1,
-    },
-    features: {
-      argo: {
-        surface: 'checkout',
-      },
     },
   },
 ]

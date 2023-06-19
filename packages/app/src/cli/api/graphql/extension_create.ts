@@ -9,7 +9,6 @@ export const ExtensionCreateQuery = gql`
         type
         title
         draftVersion {
-          config
           registrationId
           lastUserInteractionAt
           validationErrors {
@@ -42,7 +41,6 @@ export interface ExtensionCreateSchema {
       type: string
       title: string
       draftVersion: {
-        config: string
         registrationId: string
         lastUserInteractionAt: string
         validationErrors: {

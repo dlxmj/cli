@@ -60,9 +60,8 @@ export class Stdout extends EventEmitter {
 }
 
 const renderString = (element: ReactElement, renderOptions?: RenderOptions): Instance => {
-  const columns = isUnitTest() ? 80 : process.stdout.columns
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stdout = (renderOptions?.stdout as any) ?? new Stdout({columns})
+  const stdout = (renderOptions?.stdout as any) ?? new Stdout({columns: process.stdout.columns})
 
   const instance = inkRender(element, {
     stdout,

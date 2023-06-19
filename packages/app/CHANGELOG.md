@@ -1,21 +1,52 @@
 # @shopify/app
 
-## 3.47.0-pre.0
+## 3.46.5
 
 ### Patch Changes
 
-- 3a7ad2396: Fix installing function dependencies when using npm with workspaces
-- 48a644c31: Display dev command footer when using no-update or/and no-tunnel
-- 2d91f1988: Add api key to template specifications query
-- 4ded88051: Show extensions as disabled during generation when they have reached their limit
-- 31ec34bc5: Fix app loader error message when not specification is found
-- 330119712: Fix APP_UNINSTALLED webhook triggered on app reset so it also works for frontend-only apps
-- Updated dependencies [ad3894aea]
-- Updated dependencies [ca2461e94]
-- Updated dependencies [4ded88051]
-  - @shopify/cli-kit@3.47.0-pre.0
-  - @shopify/plugin-cloudflare@3.47.0-pre.0
-  - @shopify/plugin-ngrok@3.47.0-pre.0
+- 1c8404eb2: Skip .DS_Dtore files when the theme app extension bundle content is created
+  - @shopify/cli-kit@3.46.5
+  - @shopify/plugin-ngrok@3.46.5
+  - @shopify/plugin-cloudflare@3.46.5
+
+## 3.46.4
+
+### Patch Changes
+
+- Updated dependencies [11315ec46]
+  - @shopify/cli-kit@3.46.4
+  - @shopify/plugin-cloudflare@3.46.4
+  - @shopify/plugin-ngrok@3.46.4
+
+## 3.46.3
+
+### Patch Changes
+
+- Updated dependencies [e7f248893]
+- Updated dependencies [e7f248893]
+  - @shopify/cli-kit@3.46.3
+  - @shopify/plugin-cloudflare@3.46.3
+  - @shopify/plugin-ngrok@3.46.3
+
+## 3.46.2
+
+### Patch Changes
+
+- 821fa51a1: Fix installing function dependencies when using npm with workspaces
+- c7b2d7aec: Display dev command footer when using no-update or/and no-tunnel
+- Updated dependencies [fc0b6b10a]
+  - @shopify/cli-kit@3.46.2
+  - @shopify/plugin-cloudflare@3.46.2
+  - @shopify/plugin-ngrok@3.46.2
+
+## 3.46.1
+
+### Patch Changes
+
+- f4b8e5381: Fix running Javy as subprocess
+  - @shopify/cli-kit@3.46.1
+  - @shopify/plugin-ngrok@3.46.1
+  - @shopify/plugin-cloudflare@3.46.1
 
 ## 3.46.0
 

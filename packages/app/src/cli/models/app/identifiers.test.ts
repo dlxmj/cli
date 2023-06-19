@@ -12,7 +12,11 @@ describe('updateAppIdentifiers', () => {
       const uiExtension = await testUIExtension()
       const app = testApp({
         directory: tmpDir,
-        allExtensions: [uiExtension],
+        extensions: {
+          ui: [uiExtension],
+          function: [],
+          theme: [],
+        },
       })
 
       // When
@@ -42,7 +46,11 @@ describe('updateAppIdentifiers', () => {
       const uiExtension = await testUIExtension()
       const app = testApp({
         directory: tmpDir,
-        allExtensions: [uiExtension],
+        extensions: {
+          ui: [uiExtension],
+          function: [],
+          theme: [],
+        },
       })
 
       // When
@@ -86,7 +94,11 @@ describe('getAppIdentifiers', () => {
           path: joinPath(tmpDir, '.env'),
           variables: {SHOPIFY_API_KEY: 'FOO', SHOPIFY_MY_EXTENSION_ID: 'BAR'},
         },
-        allExtensions: [uiExtension],
+        extensions: {
+          ui: [uiExtension],
+          function: [],
+          theme: [],
+        },
       })
 
       // When
@@ -110,7 +122,11 @@ describe('getAppIdentifiers', () => {
       })
       const app = testApp({
         directory: tmpDir,
-        allExtensions: [uiExtension],
+        extensions: {
+          ui: [uiExtension],
+          function: [],
+          theme: [],
+        },
       })
 
       // When

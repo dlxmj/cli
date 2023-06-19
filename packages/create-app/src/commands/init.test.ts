@@ -12,7 +12,7 @@ vi.mock('../services/init')
 vi.mock('@shopify/cli-kit/node/error-handler')
 
 beforeEach(() => {
-  vi.mocked(initPrompt).mockResolvedValue({name: 'name', template: 'http://test.es', templateType: 'custom'})
+  vi.mocked(initPrompt).mockResolvedValue({name: 'name', template: 'http://test.es'})
 })
 
 describe('create app command', () => {

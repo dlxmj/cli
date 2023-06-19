@@ -1,12 +1,10 @@
-import {bundleExtension, bundleThemeExtension} from './bundle.js'
-import {testApp, testUIExtension} from '../../models/app/app.test-data.js'
-import {loadLocalExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {describe, expect, test, vi} from 'vitest'
+import {bundleExtension, bundleThemeExtensions} from './bundle.js'
+import {testUIExtension, testApp, testThemeExtensions} from '../../models/app/app.test-data.js'
+import {inTemporaryDirectory, mkdir, glob, touchFileSync} from '@shopify/cli-kit/node/fs'
+import {joinPath, basename} from '@shopify/cli-kit/node/path'
 import {context as esContext} from 'esbuild'
+import {describe, expect, test, vi} from 'vitest'
 import {AbortController} from '@shopify/cli-kit/node/abort'
-import {glob, inTemporaryDirectory, mkdir, touchFileSync} from '@shopify/cli-kit/node/fs'
-import {basename, joinPath} from '@shopify/cli-kit/node/path'
 
 vi.mock('esbuild', async () => {
   const esbuild: any = await vi.importActual('esbuild')
@@ -15,6 +13,7 @@ vi.mock('esbuild', async () => {
     context: vi.fn(),
   }
 })
+vi.mock('@shopify/cli-kit/node/ruby')
 
 describe('bundleExtension()', () => {
   test('invokes ESBuild with the right options and forwards the logs', async () => {
@@ -34,7 +33,11 @@ describe('bundleExtension()', () => {
           FOO: 'BAR',
         },
       },
-      allExtensions: [extension],
+      extensions: {
+        ui: [extension],
+        theme: [],
+        function: [],
+      },
     })
     const esbuildWatch = vi.fn()
     const esbuildDispose = vi.fn()
@@ -51,7 +54,7 @@ describe('bundleExtension()', () => {
     // When
     await bundleExtension({
       env: app.dotenv?.variables ?? {},
-      outputPath: extension.outputPath,
+      outputBundlePath: extension.outputBundlePath,
       minify: true,
       environment: 'production',
       stdin: {
@@ -78,7 +81,7 @@ describe('bundleExtension()', () => {
       resolveDir: 'mock/resolve/dir',
       loader: 'tsx',
     })
-    expect(options.outfile).toEqual(extension.outputPath)
+    expect(options.outfile).toEqual(extension.outputBundlePath)
     expect(options.loader).toEqual({
       '.esnext': 'ts',
       '.js': 'jsx',
@@ -104,68 +107,6 @@ describe('bundleExtension()', () => {
     `)
     const plugins = options.plugins?.map(({name}) => name)
     expect(plugins).toContain('graphql-loader')
-    expect(plugins).toContain('shopify:deduplicate-react')
-  })
-
-  test('can switch off React deduplication', async () => {
-    // Given
-    const extension = await testUIExtension()
-    const stdout: any = {
-      write: vi.fn(),
-    }
-    const stderr: any = {
-      write: vi.fn(),
-    }
-    const app = testApp({
-      directory: '/project',
-      dotenv: {
-        path: '/project/.env',
-        variables: {
-          FOO: 'BAR',
-        },
-      },
-      allExtensions: [extension],
-    })
-    const esbuildWatch = vi.fn()
-    const esbuildDispose = vi.fn()
-    const esbuildRebuild = vi.fn(esbuildResultFixture)
-
-    vi.mocked(esContext).mockResolvedValue({
-      rebuild: esbuildRebuild,
-      watch: esbuildWatch,
-      dispose: esbuildDispose,
-      cancel: vi.fn(),
-      serve: vi.fn(),
-    })
-
-    // When
-    await bundleExtension(
-      {
-        env: app.dotenv?.variables ?? {},
-        outputPath: extension.outputPath,
-        minify: true,
-        environment: 'production',
-        stdin: {
-          contents: 'console.log("mock stdin content")',
-          resolveDir: 'mock/resolve/dir',
-          loader: 'tsx',
-        },
-        stdout,
-        stderr,
-      },
-      {
-        ...process.env,
-        SHOPIFY_CLI_SKIP_ESBUILD_REACT_DEDUPLICATION: 'true',
-      },
-    )
-
-    // Then
-    const call = vi.mocked(esContext).mock.calls[0]!
-    expect(call).not.toBeUndefined()
-    const options = call[0]
-
-    const plugins = options.plugins?.map(({name}) => name)
-    expect(plugins).not.toContain('shopify:deduplicate-react')
   })
 
   test('stops the ESBuild when the abort signal receives an event', async () => {
@@ -179,7 +120,11 @@ describe('bundleExtension()', () => {
           FOO: 'BAR',
         },
       },
-      allExtensions: [extension],
+      extensions: {
+        ui: [extension],
+        theme: [],
+        function: [],
+      },
     })
     const stdout: any = {
       write: vi.fn(),
@@ -203,7 +148,7 @@ describe('bundleExtension()', () => {
     // When
     await bundleExtension({
       env: app.dotenv?.variables ?? {},
-      outputPath: extension.outputPath,
+      outputBundlePath: extension.outputBundlePath,
       minify: true,
       environment: 'production',
       stdin: {
@@ -262,22 +207,11 @@ describe('bundleExtension()', () => {
     test('should skip all ignored file patterns', async () => {
       await inTemporaryDirectory(async (tmpDir) => {
         // Given
-        const allSpecs = await loadLocalExtensionsSpecifications()
-        const specification = allSpecs.find((spec) => spec.identifier === 'theme')!
-        const themeExtension = new ExtensionInstance({
-          configuration: {
-            name: 'theme extension name',
-            type: 'theme' as const,
-            metafields: [],
-          },
-          configurationPath: '',
-          directory: tmpDir,
-          specification,
-        })
-
+        const themeExtension = await testThemeExtensions()
+        themeExtension.directory = tmpDir
         const outputPath = joinPath(tmpDir, 'dist')
         await mkdir(outputPath)
-        themeExtension.outputPath = outputPath
+        themeExtension.outputBundlePath = outputPath
 
         const app = testApp({
           directory: '/project',
@@ -287,7 +221,6 @@ describe('bundleExtension()', () => {
               FOO: 'BAR',
             },
           },
-          allExtensions: [themeExtension],
         })
 
         const stdout: any = {
@@ -309,14 +242,10 @@ describe('bundleExtension()', () => {
         )
 
         // When
-        await bundleThemeExtension(themeExtension, {
-          app,
-          stdout,
-          stderr,
-        })
+        await bundleThemeExtensions({extensions: [themeExtension], app, stdout, stderr})
 
         // Then
-        const filePaths = await glob(joinPath(themeExtension.outputPath, '/**/*'))
+        const filePaths = await glob(joinPath(themeExtension.outputBundlePath, '/**/*'))
         const hasFiles = filePaths
           .map((filePath) => basename(filePath))
           .some((filename) => ignoredFiles.includes(filename))

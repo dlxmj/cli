@@ -1,5 +1,4 @@
 # frozen_string_literal: true
-require "shopify_cli/theme/extension/ignore_helper"
 
 module ShopifyCLI
   module Theme
@@ -7,27 +6,20 @@ module ShopifyCLI
       class DevServer
         module Hooks
           class FileChangeHook
-            include ShopifyCLI::Theme::Extension::IgnoreHelper
+            attr_reader :ctx, :extension, :syncer, :streams, :notifier
 
-            attr_reader :ctx, :extension, :syncer, :streams, :notifier, :ignore_filter
-
-            def initialize(ctx, extension:, syncer:, notifier:, ignore_filter: nil)
+            def initialize(ctx, extension:, syncer:, notifier:)
               @ctx = ctx
               @extension = extension
               @syncer = syncer
-              @ignore_filter = ignore_filter
               @notifier = notifier
             end
 
             def call(modified, added, removed, streams: nil)
               @streams = streams
 
-              modified = paths(modified)
-                .select { |file| @extension.extension_file?(file) }
-                .reject { |file| ignore_path?(file) }
-              added = paths(added)
-                .select { |file| @extension.extension_file?(file) }
-                .reject { |file| ignore_path?(file) }
+              modified = paths(modified).select { |file| @extension.extension_file?(file) }
+              added = paths(added).select { |file| @extension.extension_file?(file) }
               removed = paths(removed)
 
               hot_reload(modified) unless modified.empty?

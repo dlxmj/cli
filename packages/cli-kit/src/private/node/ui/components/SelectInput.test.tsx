@@ -1,12 +1,10 @@
 import {SelectInput} from './SelectInput.js'
 import {sendInputAndWait, sendInputAndWaitForChange, waitForInputsToBeReady, render} from '../../testing/ui.js'
-import {platformAndArch} from '../../../../public/node/os.js'
 import {describe, expect, test, vi} from 'vitest'
 import React from 'react'
 
 const ARROW_UP = '\u001B[A'
 const ARROW_DOWN = '\u001B[B'
-const ENTER = '\r'
 
 describe('SelectInput', async () => {
   test('move up with up arrow key', async () => {
@@ -30,18 +28,16 @@ describe('SelectInput', async () => {
     const renderInstance = render(<SelectInput items={items} onChange={onChange} />)
 
     await waitForInputsToBeReady()
-    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
-    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
     await sendInputAndWaitForChange(renderInstance, ARROW_UP)
 
     expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
       "   (1) First
-      [36m>[39m  [36m(2) Second[39m
-         (3) Third
+         (2) Second
+      [36m>[39m  [36m(3) Third[39m
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenLastCalledWith(items[1])
+    expect(onChange).toHaveBeenCalledWith({item: items[2]!, usedShortcut: false})
   })
 
   test('move down with down arrow key', async () => {
@@ -74,7 +70,7 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenCalledWith(items[1])
+    expect(onChange).toHaveBeenCalledWith({item: items[1]!, usedShortcut: false})
   })
 
   test('handles single digit numeric shortcuts', async () => {
@@ -107,7 +103,7 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenCalledWith(items[1])
+    expect(onChange).toHaveBeenCalledWith({item: items[1]!, usedShortcut: true})
   })
 
   test('handles keys with multiple digits', async () => {
@@ -140,7 +136,7 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenCalledWith(items[2])
+    expect(onChange).toHaveBeenCalledWith({item: items[2]!, usedShortcut: true})
   })
 
   test('handles pressing non existing keys', async () => {
@@ -164,7 +160,7 @@ describe('SelectInput', async () => {
 
     await waitForInputsToBeReady()
     // nothing changes when pressing a key that doesn't exist
-    await sendInputAndWait(renderInstance, 500, '4')
+    await sendInputAndWait(renderInstance, 100, '4')
 
     expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
       "[36m>[39m  [36m(1) First[39m
@@ -173,7 +169,8 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenCalledWith({item: items[0]!, usedShortcut: false})
   })
 
   test('handles custom keys', async () => {
@@ -206,12 +203,44 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenCalledWith(items[2])
+    expect(onChange).toHaveBeenCalledWith({item: items[2]!, usedShortcut: true})
   })
 
-  const runningOnWindows = platformAndArch().platform === 'windows'
+  test('rotate after reaching the end of the list', async () => {
+    const onChange = vi.fn()
+    const items = [
+      {
+        label: 'First',
+        value: 'first',
+      },
+      {
+        label: 'Second',
+        value: 'second',
+      },
+      {
+        label: 'Third',
+        value: 'third',
+      },
+    ]
 
-  test.skipIf(runningOnWindows)('support groups', async () => {
+    const renderInstance = render(<SelectInput items={items} onChange={onChange} />)
+
+    await waitForInputsToBeReady()
+    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
+    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
+    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
+
+    expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
+      "[36m>[39m  [36m(1) First[39m
+         (2) Second
+         (3) Third
+
+         [2mPress ↑↓ arrows to select, enter to confirm[22m"
+    `)
+    expect(onChange).toHaveBeenCalledWith({item: items[0]!, usedShortcut: false})
+  })
+
+  test('support groups', async () => {
     const onChange = vi.fn()
 
     const items = [
@@ -271,7 +300,7 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenCalledWith(items[4])
+    expect(onChange).toHaveBeenCalledWith({item: items[4]!, usedShortcut: true})
 
     await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
     await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
@@ -295,7 +324,7 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).toHaveBeenLastCalledWith(items[6])
+    expect(onChange).toHaveBeenCalledWith({item: items[6]!, usedShortcut: false})
   })
 
   test('allows disabling shortcuts', async () => {
@@ -328,7 +357,8 @@ describe('SelectInput', async () => {
 
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenCalledWith({item: items[0]!, usedShortcut: false})
   })
 
   test('accepts a default value', async () => {
@@ -347,7 +377,9 @@ describe('SelectInput', async () => {
       },
     ]
 
-    const renderInstance = render(<SelectInput items={items} onChange={() => {}} defaultValue="second" />)
+    const renderInstance = render(
+      <SelectInput items={items} onChange={() => {}} defaultValue={{label: 'Second', value: 'second'}} />,
+    )
 
     await waitForInputsToBeReady()
 
@@ -430,6 +462,25 @@ describe('SelectInput', async () => {
     `)
 
     await waitForInputsToBeReady()
+    await sendInputAndWaitForChange(renderInstance, ARROW_UP)
+
+    expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
+      "   [1mOther[22m
+      [36m>[39m  [36m(10) tenth[39m
+
+         [1mAutomations[22m
+         (a) fifth
+         (2) sixth
+
+         [1mMerchant Admin[22m
+         (3) eighth
+         (4) ninth
+
+         [2mShowing 5 of 10 items.[22m
+         [2mPress ↑↓ arrows to select, enter to confirm[22m"
+    `)
+
+    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
     await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
     await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
     await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
@@ -451,231 +502,5 @@ describe('SelectInput', async () => {
          [2mShowing 5 of 10 items.[22m
          [2mPress ↑↓ arrows to select, enter to confirm[22m"
     `)
-  })
-
-  test('pressing enter calls onSubmit on the default option', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-      },
-      {
-        label: 'Second',
-        value: 'second',
-      },
-      {
-        label: 'Third',
-        value: 'third',
-      },
-    ]
-
-    const renderInstance = render(<SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} />)
-
-    await waitForInputsToBeReady()
-    await sendInputAndWait(renderInstance, 100, ENTER)
-
-    expect(onSubmit).toHaveBeenCalledWith(items[0])
-  })
-
-  test('pressing enter calls onSubmit on the selected option', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-      },
-      {
-        label: 'Second',
-        value: 'second',
-      },
-      {
-        label: 'Third',
-        value: 'third',
-      },
-    ]
-
-    const renderInstance = render(<SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} />)
-
-    await waitForInputsToBeReady()
-    await sendInputAndWait(renderInstance, 100, ARROW_DOWN)
-    await sendInputAndWait(renderInstance, 100, ENTER)
-
-    expect(onSubmit).toHaveBeenCalledWith(items[1])
-  })
-
-  test('using a shortcut calls onSubmit if submitWithShortcuts is true', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-        key: 'f',
-      },
-      {
-        label: 'Second',
-        value: 'second',
-        key: 's',
-      },
-      {
-        label: 'Third',
-        value: 'third',
-        key: 't',
-      },
-    ]
-
-    const renderInstance = render(
-      <SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} submitWithShortcuts />,
-    )
-
-    await waitForInputsToBeReady()
-    await sendInputAndWait(renderInstance, 500, 's')
-
-    expect(onSubmit).toHaveBeenCalledWith(items[1])
-  })
-
-  test('using a shortcut does not call onSubmit if submitWithShortcuts is false', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-        key: 'f',
-      },
-      {
-        label: 'Second',
-        value: 'second',
-        key: 's',
-      },
-      {
-        label: 'Third',
-        value: 'third',
-        key: 't',
-      },
-    ]
-
-    const renderInstance = render(<SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} />)
-
-    await waitForInputsToBeReady()
-    await sendInputAndWait(renderInstance, 500, 's')
-
-    expect(onSubmit).not.toHaveBeenCalled()
-  })
-
-  test('supports disabled options', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-        key: 'f',
-      },
-      {
-        label: 'Second',
-        value: 'second',
-        key: 's',
-        disabled: true,
-      },
-      {
-        label: 'Third',
-        value: 'third',
-        key: 't',
-      },
-    ]
-
-    const renderInstance = render(<SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} />)
-
-    await waitForInputsToBeReady()
-    await sendInputAndWaitForChange(renderInstance, ARROW_DOWN)
-
-    expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
-      "   (f) First
-         [2m(s) Second[22m
-      [36m>[39m  [36m(t) Third[39m
-
-         [2mPress ↑↓ arrows to select, enter to confirm[22m"
-    `)
-
-    await sendInputAndWait(renderInstance, 100, ENTER)
-
-    expect(onSubmit).toHaveBeenCalledWith(items[2])
-  })
-
-  test('default value will be skipped if the option is disabled', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-        key: 'f',
-      },
-      {
-        label: 'Second',
-        value: 'second',
-        key: 's',
-        disabled: true,
-      },
-      {
-        label: 'Third',
-        value: 'third',
-        key: 't',
-      },
-    ]
-
-    const renderInstance = render(
-      <SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} defaultValue="second" />,
-    )
-
-    expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
-      "[36m>[39m  [36m(f) First[39m
-         [2m(s) Second[22m
-         (t) Third
-
-         [2mPress ↑↓ arrows to select, enter to confirm[22m"
-    `)
-
-    await waitForInputsToBeReady()
-    await sendInputAndWait(renderInstance, 100, ENTER)
-
-    expect(onSubmit).toHaveBeenCalledWith(items[0])
-  })
-
-  test('selects the next non-disabled option if the first option is disabled', async () => {
-    const onSubmit = vi.fn()
-    const items = [
-      {
-        label: 'First',
-        value: 'first',
-        key: 'f',
-        disabled: true,
-      },
-      {
-        label: 'Second',
-        value: 'second',
-        key: 's',
-        disabled: true,
-      },
-      {
-        label: 'Third',
-        value: 'third',
-        key: 't',
-      },
-    ]
-
-    const renderInstance = render(<SelectInput items={items} onChange={() => {}} onSubmit={onSubmit} />)
-
-    await waitForInputsToBeReady()
-
-    expect(renderInstance.lastFrame()).toMatchInlineSnapshot(`
-      "   [2m(f) First[22m
-         [2m(s) Second[22m
-      [36m>[39m  [36m(t) Third[39m
-
-         [2mPress ↑↓ arrows to select, enter to confirm[22m"
-    `)
-
-    await sendInputAndWait(renderInstance, 100, ENTER)
-
-    expect(onSubmit).toHaveBeenCalledWith(items[2])
   })
 })

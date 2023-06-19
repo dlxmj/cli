@@ -62,17 +62,17 @@ const BoxWithBorder: FunctionComponent<BannerProps> = ({type, children}) => {
     >
       <Box
         width={twoThirds}
+        paddingY={1}
+        paddingX={2}
         marginBottom={1}
         borderStyle="round"
         flexDirection="column"
         borderColor={typeToColor(type)}
       >
-        <Box marginTop={-1} marginLeft={1}>
+        <Box marginTop={-2} marginBottom={1} marginLeft={-1}>
           <Text>{` ${type.replace(/_/g, ' ')} `}</Text>
         </Box>
-        <Box flexDirection="column" paddingY={1} paddingX={2} gap={1}>
-          {children}
-        </Box>
+        {children}
       </Box>
       <Footnotes />
     </LinksContext.Provider>
@@ -86,16 +86,20 @@ const BoxWithTopBottomLines: FunctionComponent<BannerProps> = ({type, children})
   if (topLineAfterTypeLength < 0) topLineAfterTypeLength = 0
 
   return (
-    <Box flexDirection="column" marginBottom={1} gap={1}>
-      <Text>
-        <Text color={typeToColor(type)}>{'─'.repeat(2)}</Text>
-        <Text>{` ${type.replace(/_/g, ' ')} `}</Text>
-        <Text color={typeToColor(type)}>{'─'.repeat(topLineAfterTypeLength)}</Text>
-      </Text>
+    <Box flexDirection="column" marginBottom={1}>
+      <Box marginBottom={1}>
+        <Text>
+          <Text color={typeToColor(type)}>{'─'.repeat(2)}</Text>
+          <Text>{` ${type.replace(/_/g, ' ')} `}</Text>
+          <Text color={typeToColor(type)}>{'─'.repeat(topLineAfterTypeLength)}</Text>
+        </Text>
+      </Box>
 
       {children}
 
-      <Text color={typeToColor(type)}>{'─'.repeat(twoThirds)}</Text>
+      <Box marginTop={1}>
+        <Text color={typeToColor(type)}>{'─'.repeat(twoThirds)}</Text>
+      </Box>
     </Box>
   )
 }

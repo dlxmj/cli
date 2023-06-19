@@ -3,9 +3,9 @@ import {ExtensionDevOptions} from '../extension.js'
 import {bundleExtension} from '../../extensions/bundle.js'
 
 import {AppInterface} from '../../../models/app/app.js'
+import {UIExtension} from '../../../models/app/extensions.js'
+import {UIExtensionSpec} from '../../../models/extensions/ui.js'
 import {updateExtensionConfig, updateExtensionDraft} from '../update-extension.js'
-import {ExtensionInstance} from '../../../models/extensions/extension-instance.js'
-import {ExtensionSpecification} from '../../../models/extensions/specification.js'
 import {AbortController, AbortSignal} from '@shopify/cli-kit/node/abort'
 import {joinPath} from '@shopify/cli-kit/node/path'
 import {outputDebug, outputInfo} from '@shopify/cli-kit/node/output'
@@ -36,7 +36,7 @@ export async function setupBundlerAndFileWatcher(options: FileWatcherOptions) {
     bundlers.push(
       bundleExtension({
         minify: false,
-        outputPath: extension.outputPath,
+        outputBundlePath: extension.outputBundlePath,
         environment: 'development',
         env: {
           ...(options.devOptions.app.dotenv?.variables ?? {}),
@@ -110,8 +110,8 @@ export async function setupBundlerAndFileWatcher(options: FileWatcherOptions) {
   }
 }
 
-interface SetupDraftableExtensionBundlerOptions {
-  extension: ExtensionInstance
+interface SetupNonPrevieableExtensionBundlerOptions {
+  extension: UIExtension
   app: AppInterface
   url: string
   token: string
@@ -122,7 +122,7 @@ interface SetupDraftableExtensionBundlerOptions {
   signal: AbortSignal
 }
 
-export async function setupDraftableExtensionBundler({
+export async function setupNonPreviewableExtensionBundler({
   extension,
   app,
   url,
@@ -132,10 +132,10 @@ export async function setupDraftableExtensionBundler({
   stderr,
   stdout,
   signal,
-}: SetupDraftableExtensionBundlerOptions) {
+}: SetupNonPrevieableExtensionBundlerOptions) {
   return bundleExtension({
     minify: false,
-    outputPath: extension.outputPath,
+    outputBundlePath: extension.outputBundlePath,
     environment: 'development',
     env: {
       ...(app.dotenv?.variables ?? {}),
@@ -164,14 +164,14 @@ export async function setupDraftableExtensionBundler({
 }
 
 interface SetupConfigWatcherOptions {
-  extension: ExtensionInstance
+  extension: UIExtension
   token: string
   apiKey: string
   registrationId: string
   stdout: Writable
   stderr: Writable
   signal: AbortSignal
-  specifications: ExtensionSpecification[]
+  specifications: UIExtensionSpec[]
 }
 
 export async function setupConfigWatcher({

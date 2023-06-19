@@ -1,8 +1,7 @@
 import {buildFunctionExtension} from './extension.js'
+import {FunctionExtension} from '../../models/app/extensions.js'
 import {testFunctionExtension} from '../../models/app/app.test-data.js'
 import {buildJSFunction} from '../function/build.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {FunctionConfigType} from '../../models/extensions/specifications/function.js'
 import {beforeEach, describe, expect, test, vi} from 'vitest'
 import {exec} from '@shopify/cli-kit/node/system'
 
@@ -10,23 +9,11 @@ vi.mock('@shopify/cli-kit/node/system')
 vi.mock('../function/build.js')
 
 describe('buildFunctionExtension', () => {
-  let extension: ExtensionInstance<FunctionConfigType>
+  let extension: FunctionExtension
   let stdout: any
   let stderr: any
   let signal: any
   let app: any
-  const defaultConfig = {
-    name: 'MyFunction',
-    type: 'product_discounts',
-    description: '',
-    build: {
-      command: 'make build',
-      path: 'dist/index.wasm',
-    },
-    configurationUi: true,
-    apiVersion: '2022-07',
-    metafields: [],
-  }
 
   beforeEach(async () => {
     stdout = vi.fn()
@@ -34,7 +21,19 @@ describe('buildFunctionExtension', () => {
     stdout = {write: vi.fn()}
     signal = vi.fn()
     app = {}
-    extension = await testFunctionExtension({config: defaultConfig})
+    extension = await testFunctionExtension({
+      config: {
+        name: 'MyFunction',
+        type: 'product_discounts',
+        description: '',
+        build: {
+          command: 'make build',
+          path: 'dist/index.wasm',
+        },
+        configurationUi: true,
+        apiVersion: '2022-07',
+      },
+    })
   })
 
   test('delegates the build to system when the build command is present', async () => {
@@ -77,8 +76,8 @@ describe('buildFunctionExtension', () => {
 
   test('succeeds when is a JS function and build command is not present', async () => {
     // Given
-    extension = await testFunctionExtension({config: defaultConfig, entryPath: 'src/index.js'})
     extension.configuration.build.command = undefined
+    extension.entrySourceFilePath = 'src/index.js'
 
     // When
     await expect(
@@ -101,8 +100,8 @@ describe('buildFunctionExtension', () => {
 
   test('succeeds when is a JS function and build command is present', async () => {
     // Given
-    extension = await testFunctionExtension({config: defaultConfig, entryPath: 'src/index.js'})
     extension.configuration.build.command = './scripts/build.sh argument'
+    extension.entrySourceFilePath = 'src/index.js'
 
     // When
     await expect(

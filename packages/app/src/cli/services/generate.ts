@@ -14,8 +14,9 @@ import {
   generateExtensionTemplate,
   ExtensionFlavorValue,
 } from '../services/generate/extension.js'
-import {ExtensionTemplate, TemplateType} from '../models/app/template.js'
-import {ExtensionSpecification} from '../models/extensions/specification.js'
+import {ExtensionTemplate, TemplateType, getTypesExternalName} from '../models/app/template.js'
+import {blocks} from '../constants.js'
+import {GenericSpecification} from '../models/app/extensions.js'
 import {PackageManager} from '@shopify/cli-kit/node/node-package-manager'
 import {Config} from '@oclif/core'
 import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
@@ -43,7 +44,7 @@ async function generate(options: GenerateOptions) {
   const specifications = await fetchSpecifications({token, apiKey, config: options.config})
   const app: AppInterface = await loadApp({directory: options.directory, specifications})
   const availableSpecifications = specifications.map((spec) => spec.identifier)
-  const extensionTemplates = await fetchExtensionTemplates(token, apiKey, availableSpecifications)
+  const extensionTemplates = await fetchExtensionTemplates(token, availableSpecifications)
 
   const promptOptions = await buildPromptOptions(extensionTemplates, specifications, app, options)
   const promptAnswers = await generateExtensionPrompts(promptOptions)
@@ -58,7 +59,7 @@ async function generate(options: GenerateOptions) {
 
 async function buildPromptOptions(
   extensionTemplates: ExtensionTemplate[],
-  specifications: ExtensionSpecification[],
+  specifications: GenericSpecification[],
   app: AppInterface,
   options: GenerateOptions,
 ): Promise<GenerateExtensionPromptOptions> {
@@ -74,14 +75,14 @@ async function buildPromptOptions(
     directory: joinPath(options.directory, 'extensions'),
     app,
     extensionTemplates: validTemplates ?? [],
-    unavailableExtensions: templatesOverlimit ?? [],
+    unavailableExtensions: getTypesExternalName(templatesOverlimit ?? []),
     reset: options.reset,
   }
 }
 
 function checkLimits(
   extensionTemplates: ExtensionTemplate[],
-  specifications: ExtensionSpecification[],
+  specifications: GenericSpecification[],
   app: AppInterface,
 ) {
   const iterateeFunction = (template: ExtensionTemplate) => {
@@ -91,11 +92,15 @@ function checkLimits(
   return groupBy(extensionTemplates, iterateeFunction)
 }
 
-function limitReached(app: AppInterface, specifications: ExtensionSpecification[], templateType: TemplateType) {
+function limitReached(app: AppInterface, specifications: GenericSpecification[], templateType: TemplateType) {
   const type = templateType.type
-  const specification = specifications.find((spec) => spec.identifier === type || spec.externalIdentifier === type)
-  const existingExtensions = app.extensionsForType({identifier: type, externalIdentifier: type})
-  return existingExtensions.length >= (specification?.registrationLimit || 1)
+  if (type === 'function') {
+    return app.extensions.function.length >= blocks.functions.defaultRegistrationLimit
+  } else {
+    const specification = specifications.find((spec) => spec.identifier === type || spec.externalIdentifier === type)
+    const existingExtensions = app.extensionsForType({identifier: type, externalIdentifier: type})
+    return existingExtensions.length >= (specification?.registrationLimit || 1)
+  }
 }
 
 async function saveAnalyticsMetadata(promptAnswers: GenerateExtensionPromptOutput, typeFlag: string | undefined) {
@@ -182,7 +187,7 @@ async function handleTypeParameter(
   typeFlag: string | undefined,
   app: AppInterface,
   extensionTemplates: ExtensionTemplate[],
-  specifications: ExtensionSpecification[],
+  specifications: GenericSpecification[],
 ): Promise<ExtensionTemplate | undefined> {
   if (!typeFlag) return
 

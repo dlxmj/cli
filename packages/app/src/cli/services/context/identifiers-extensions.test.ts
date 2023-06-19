@@ -1,19 +1,19 @@
-/* eslint-disable @shopify/prefer-module-scope-constants */
 import {automaticMatchmaking} from './id-matching.js'
-import {ensureExtensionsIds} from './identifiers-extensions.js'
-import {deployConfirmationPrompt, extensionMigrationPrompt, matchConfirmationPrompt} from './prompts.js'
 import {manualMatchIds} from './id-manual-matching.js'
+import {ensureExtensionsIds} from './identifiers-extensions.js'
+import {RemoteSource} from './identifiers.js'
+import {deployConfirmationPrompt, extensionMigrationPrompt, matchConfirmationPrompt} from './prompts.js'
+import {createExtension} from '../dev/create-extension.js'
 import {AppInterface} from '../../models/app/app.js'
-import {testApp, testFunctionExtension, testUIExtension} from '../../models/app/app.test-data.js'
+import {FunctionExtension, UIExtension} from '../../models/app/extensions.js'
+import {testApp} from '../../models/app/app.test-data.js'
 import {getExtensionsToMigrate, migrateExtensionsToUIExtension} from '../dev/migrate-to-ui-extension.js'
 import {OrganizationApp} from '../../models/organization.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {createExtension} from '../dev/create-extension.js'
-import {beforeEach, describe, expect, vi, test, beforeAll} from 'vitest'
+import {beforeEach, describe, expect, vi, test} from 'vitest'
 import {err, ok} from '@shopify/cli-kit/node/result'
 import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
 
-const REGISTRATION_A = {
+const REGISTRATION_A: RemoteSource = {
   uuid: 'UUID_A',
   id: 'A',
   title: 'A',
@@ -55,18 +55,130 @@ const FUNCTION_REGISTRATION_A = {
   type: 'FUNCTION',
 }
 
-let EXTENSION_A: ExtensionInstance
-let EXTENSION_A_2: ExtensionInstance
-let EXTENSION_B: ExtensionInstance
-let FUNCTION_A: ExtensionInstance
+const EXTENSION_A: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_A_ID',
+  localIdentifier: 'EXTENSION_A',
+  configurationPath: '',
+  directory: '',
+  type: 'checkout_post_purchase',
+  graphQLType: 'CHECKOUT_POST_PURCHASE',
+  configuration: {
+    name: '',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (_target: string) => true,
+  isPreviewable: true,
+}
 
-const LOCAL_APP = (uiExtensions: ExtensionInstance[], functionExtensions: ExtensionInstance[] = []): AppInterface => {
+const EXTENSION_A_2: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_A_2_ID',
+  localIdentifier: 'EXTENSION_A_2',
+  configurationPath: '',
+  directory: '',
+  type: 'checkout_post_purchase',
+  graphQLType: 'CHECKOUT_POST_PURCHASE',
+  configuration: {
+    name: '',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (_target: string) => true,
+  isPreviewable: true,
+}
+
+const EXTENSION_B: UIExtension = {
+  idEnvironmentVariableName: 'EXTENSION_B_ID',
+  localIdentifier: 'EXTENSION_B',
+  configurationPath: '',
+  directory: '',
+  type: 'checkout_post_purchase',
+  graphQLType: 'CHECKOUT_POST_PURCHASE',
+  configuration: {
+    name: '',
+    type: 'checkout_post_purchase',
+    metafields: [],
+    capabilities: {network_access: false, block_progress: false, api_access: false},
+  },
+  outputBundlePath: '',
+  entrySourceFilePath: '',
+  devUUID: 'devUUID',
+  externalType: 'checkout_ui',
+  surface: 'surface',
+  preDeployValidation: () => Promise.resolve(),
+  buildValidation: () => Promise.resolve(),
+  deployConfig: () => Promise.resolve({}),
+  previewMessage: (_) => undefined,
+  publishURL: (_) => Promise.resolve(''),
+  validate: () => Promise.resolve(ok({})),
+  getBundleExtensionStdinContent: () => '',
+  shouldFetchCartUrl: () => true,
+  hasExtensionPointTarget: (_target: string) => true,
+  isPreviewable: true,
+}
+
+const FUNCTION_A: FunctionExtension = {
+  idEnvironmentVariableName: 'FUNCTION_A_ID',
+  localIdentifier: 'FUNCTION_A',
+  configurationPath: '/function/shopify.function.extension.toml',
+  directory: '/function',
+  type: 'product_discounts',
+  graphQLType: 'PRODUCT_DISCOUNTS',
+  configuration: {
+    name: '',
+    type: 'product_discounts',
+    description: 'Function',
+    build: {
+      command: 'make build',
+      path: 'dist/index.wasm',
+    },
+    configurationUi: false,
+    apiVersion: '2022-07',
+  },
+  buildCommand: 'make build',
+  buildWasmPath: '/function/dist/index.wasm',
+  inputQueryPath: '/function/input.graphql',
+  isJavaScript: false,
+  externalType: 'function',
+  usingExtensionsFramework: false,
+  publishURL: (_) => Promise.resolve(''),
+}
+
+const LOCAL_APP = (uiExtensions: UIExtension[], functionExtensions: FunctionExtension[] = []): AppInterface => {
   return testApp({
     name: 'my-app',
     directory: '/app',
     configurationPath: '/shopify.app.toml',
     configuration: {scopes: 'read_products', extensionDirectories: ['extensions/*']},
-    allExtensions: [...uiExtensions, ...functionExtensions],
+    extensions: {ui: uiExtensions, theme: [], function: functionExtensions},
   })
 }
 
@@ -90,8 +202,8 @@ const PARTNERS_APP_WITHOUT_UNIFIED_APP_DEPLOYMENTS_BETA: OrganizationApp = {
 }
 
 const options = (
-  uiExtensions: ExtensionInstance[],
-  functionExtensions: ExtensionInstance[] = [],
+  uiExtensions: UIExtension[],
+  functionExtensions: FunctionExtension[] = [],
   identifiers: any = {},
   partnersApp: OrganizationApp = PARTNERS_APP_WITH_UNIFIED_APP_DEPLOYMENTS_BETA,
 ) => {
@@ -120,68 +232,6 @@ vi.mock('../dev/create-extension')
 vi.mock('./id-matching')
 vi.mock('./id-manual-matching')
 vi.mock('../dev/migrate-to-ui-extension')
-
-beforeAll(async () => {
-  EXTENSION_A = await testUIExtension({
-    localIdentifier: 'EXTENSION_A',
-    configurationPath: '',
-    directory: 'EXTENSION_A',
-    type: 'checkout_post_purchase',
-    configuration: {
-      name: '',
-      type: 'checkout_post_purchase',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-  })
-
-  EXTENSION_A_2 = await testUIExtension({
-    localIdentifier: 'EXTENSION_A_2',
-    configurationPath: '',
-    directory: 'EXTENSION_A_2',
-    type: 'checkout_post_purchase',
-    configuration: {
-      name: '',
-      type: 'checkout_post_purchase',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  EXTENSION_B = await testUIExtension({
-    localIdentifier: 'EXTENSION_B',
-    configurationPath: '',
-    directory: 'EXTENSION_B',
-    type: 'checkout_post_purchase',
-    configuration: {
-      name: '',
-      type: 'checkout_post_purchase',
-      metafields: [],
-      capabilities: {network_access: false, block_progress: false, api_access: false},
-    },
-    entrySourceFilePath: '',
-    devUUID: 'devUUID',
-  })
-
-  FUNCTION_A = await testFunctionExtension({
-    dir: '/function',
-    config: {
-      name: '',
-      type: 'product_discounts',
-      description: 'Function',
-      build: {
-        command: 'make build',
-        path: 'dist/index.wasm',
-      },
-      metafields: [],
-      configurationUi: false,
-      apiVersion: '2022-07',
-    },
-  })
-})
 
 beforeEach(() => {
   vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')

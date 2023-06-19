@@ -25,7 +25,7 @@ export interface FrontendURLOptions {
   noTunnel: boolean
   tunnelUrl?: string
   commandConfig: Config
-  tunnelClient: TunnelClient | undefined
+  tunnelClient: TunnelClient
 }
 
 export interface FrontendURLResult {
@@ -48,7 +48,7 @@ export interface FrontendURLResult {
  */
 export async function generateFrontendURL(options: FrontendURLOptions): Promise<FrontendURLResult> {
   let frontendPort = 4040
-  let frontendUrl = ''
+  let frontendUrl: string
   let usingLocalhost = false
 
   if (codespaceURL()) {
@@ -85,7 +85,7 @@ export async function generateFrontendURL(options: FrontendURLOptions): Promise<
     frontendPort = await getAvailableTCPPort()
     frontendUrl = 'http://localhost'
     usingLocalhost = true
-  } else if (options.tunnelClient) {
+  } else {
     const url = await pollTunnelURL(options.tunnelClient)
     frontendPort = options.tunnelClient.port
     frontendUrl = url
@@ -103,7 +103,7 @@ async function pollTunnelURL(tunnelClient: TunnelClient): Promise<string> {
     const pollTunnelStatus = async () => {
       const result = tunnelClient.getTunnelStatus()
       outputDebug(`Polling tunnel status for ${tunnelClient.provider} (attempt ${retries}): ${result.status}`)
-      if (result.status === 'error') return reject(new BugError(result.message, result.tryMessage))
+      if (result.status === 'error') return reject(new BugError(result.message))
       if (result.status === 'connected') {
         resolve(result.url)
       } else {

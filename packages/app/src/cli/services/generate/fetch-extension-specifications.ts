@@ -1,14 +1,18 @@
-import {loadExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
+import {loadThemeSpecifications, loadUIExtensionSpecifications} from '../../models/extensions/specifications.js'
+import {UIExtensionSpec} from '../../models/extensions/ui.js'
+import {ThemeExtensionSpec} from '../../models/extensions/theme.js'
+import {GenericSpecification} from '../../models/app/extensions.js'
 import {
   ExtensionSpecificationsQuery,
   ExtensionSpecificationsQuerySchema,
   FlattenedRemoteSpecification,
 } from '../../api/graphql/extension_specifications.js'
 
-import {ExtensionSpecification} from '../../models/extensions/specification.js'
 import {getArrayRejectingUndefined} from '@shopify/cli-kit/common/array'
 import {Config} from '@oclif/core'
 import {partnersRequest} from '@shopify/cli-kit/node/api/partners'
+
+type ExtensionSpec = UIExtensionSpec | ThemeExtensionSpec
 
 export interface FetchSpecificationsOptions {
   token: string
@@ -31,7 +35,7 @@ export async function fetchSpecifications({
   token,
   apiKey,
   config,
-}: FetchSpecificationsOptions): Promise<ExtensionSpecification[]> {
+}: FetchSpecificationsOptions): Promise<GenericSpecification[]> {
   const result: ExtensionSpecificationsQuerySchema = await partnersRequest(ExtensionSpecificationsQuery, token, {
     api_key: apiKey,
   })
@@ -53,20 +57,23 @@ export async function fetchSpecifications({
       return newSpec
     })
 
-  const local = await loadExtensionsSpecifications(config)
+  const ui = await loadUIExtensionSpecifications(config)
+  const theme = await loadThemeSpecifications()
+  const local = [...ui, ...theme]
+
   const updatedSpecs = mergeLocalAndRemoteSpecs(local, extensionSpecifications)
   return [...updatedSpecs]
 }
 
 function mergeLocalAndRemoteSpecs(
-  local: ExtensionSpecification[],
+  local: ExtensionSpec[],
   remote: FlattenedRemoteSpecification[],
-): ExtensionSpecification[] {
+): GenericSpecification[] {
   const updated = local.map((spec) => {
     const remoteSpec = remote.find((remote) => remote.identifier === spec.identifier)
-    if (remoteSpec) return {...spec, ...remoteSpec} as ExtensionSpecification
+    if (remoteSpec) return {...spec, ...remoteSpec}
     return undefined
   })
 
-  return getArrayRejectingUndefined<ExtensionSpecification>(updated)
+  return getArrayRejectingUndefined<GenericSpecification>(updated)
 }

@@ -1,26 +1,25 @@
 #! /usr/bin/env node
 
-import * as readline from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
-import { createRequire } from "module";
-import { fileURLToPath } from "url";
-import { Readable } from "stream";
-import execa, { node } from "execa";
-import path from "path";
-import os from "os";
-import fs from "fs";
+import * as readline from 'node:readline/promises'
+import { stdin as input, stdout as output } from 'node:process'
+import { createRequire } from "module"
+import { fileURLToPath } from "url"
+import { Readable } from "stream"
+import execa from "execa"
+import path from "path"
+import os from "os"
+import fs from "fs"
 
-const require = createRequire(import.meta.url);
-const { program } = require("commander");
+const require = createRequire(import.meta.url)
+const { program } = require("commander")
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const homeDir = os.homedir();
-const today = new Date().toISOString().split("T")[0];
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const homeDir = os.homedir()
+const today = new Date().toISOString().split("T")[0]
 
-const installationTypes = ["local", "nightly"];
-const extensionTypes = ["ui", "theme", "function"];
-const packageManagers = ["npm", "yarn", "pnpm"];
+const installationTypes = ["local", "nightly"]
+const extensionTypes = ["ui", "theme", "function"]
 
 program
   .description("Creates a test app.")
@@ -45,237 +44,159 @@ program
     `nightly-app-${today}`
   )
   .option(
-    "-p, --package-manager <packageManager>",
-    `package manager to be used: ${packageManagers.join(", ")}`
+    "--cleanup",
+    "delete temp app afterwards",
+    false
   )
-  .option("--cleanup", "delete temp app afterwards", false)
-  .option("--deploy", "deploy the app to Shopify", false)
+  .option(
+    "--deploy",
+    "deploy the app to Shopify",
+    false
+  )
   .action(async (options) => {
     // helpers
     const log = (message) => {
-      console.log(`\r\n🧪 ${message}`);
-    };
-
-    // main
-    let shopifyExec;
-    let nodePackageManager;
-    let defaultOpts = { stdio: "inherit" };
-    let extensions = options.bare
-      ? new Set()
-      : new Set(options.extensions.split(","));
-
-    const appName = options.name;
-    const appPath = path.join(homeDir, "Desktop", appName);
-
-    switch (options.packageManager) {
-      case "npm":
-      case "yarn":
-      case "pnpm":
-        nodePackageManager = options.packageManager;
-        break;
-      case undefined:
-        if (options.install === "local") {
-          nodePackageManager = "pnpm";
-        } else if (options.install === "nightly") {
-          nodePackageManager = "npm";
-        }
-        break;
-      default:
-        log(
-          `Invalid package manager: ${
-            options.packageManager
-          }. Must be one of ${packageManagers.join(", ")}.`
-        );
-        process.exit(1);
+      console.log(`\r\n🧪 ${message}`)
     }
-
-    const nodeExec = async (commands, args = [], options = {}) => {
-      switch (nodePackageManager) {
-        case "yarn":
-        case "pnpm":
-          return execa(
-            nodePackageManager,
-            ["run", ...commands, ...args],
-            options
-          );
-          break;
-        case "npm":
-          return execa("npm", ["run", ...commands, "--", ...args], options);
-      }
-    };
 
     const appExec = async (command, args, options = {}) => {
-      const defaults = { cwd: appPath, stdio: "inherit" };
-      log(`Running \`${command} ${args.join(" ")}\``);
-      await execa(command, args, { ...defaults, ...options });
-    };
-
-    const appNodeExec = async (commands, args = [], options = {}) => {
-      const defaults = { cwd: appPath, stdio: "inherit" };
-      log(`Running '${commands.join(" ")}' with args '${args.join(" ")}'`);
-      await nodeExec(commands, args, { ...defaults, ...options });
-    };
-
-    const appDev = async () => {
-      try {
-        await appExec(nodePackageManager, ["run", "dev"]);
-      } catch (error) {}
-    };
-
-    const generateExtension = async (args, options = {}) => {
-      await appNodeExec(["generate", "extension"], args, options);
-    };
-
-    if (fs.existsSync(appPath)) {
-      const rl = readline.createInterface({ input, output });
-      const answer = await rl.question(
-        `\r\n🙋 I've found an app in '${appPath}'. Should I remove it and keep going? (Y/n)`
-      );
-      rl.close();
-
-      if (answer.toLowerCase() === "y" || answer === "") {
-        log(`Removing app in '${appPath}'...`);
-        fs.rmSync(appPath, { recursive: true });
-      } else {
-        process.exit(0);
-      }
+      const defaults = { cwd: appPath, stdio: "inherit" }
+      await execa(command, args, { ...defaults, ...options })
     }
+
+    const pnpmDev = async () => {
+      try {
+        await appExec("pnpm", ["run", "dev"])
+      } catch (error) {}
+    }
+
+    // main
+    let shopifyExec
+    let defaultOpts = { stdio: "inherit" }
+    let extensions = options.bare ? new Set() : new Set(options.extensions.split(","))
+
+    const appName = options.name
+    const appPath = path.join(homeDir, "Desktop", appName)
 
     switch (options.install) {
       case "local":
-        log("Building latest release...");
-        await nodeExec(["build"]);
+        log("Building latest release...")
+        await execa("pnpm", ["build"])
 
-        log(`Creating new app in '${appPath}'...`);
-        await nodeExec(
-          ["create-app"],
+        if (fs.existsSync(appPath)) {
+          const rl = readline.createInterface({ input, output })
+          const answer = await rl.question(`\r\n🙋‍♀️ I've found an app in ${appPath}. Should I remove it and keep going? (Y/n)`);
+          rl.close();
+
+          if (answer.toLowerCase() === 'y' || answer === '') {
+            log(`Removing app in '${appPath}'...`)
+            fs.rmSync(appPath, { recursive: true })
+          } else {
+            process.exit(0)
+          }
+        }
+
+        log(`Creating new app in ${appPath}...`)
+        await execa(
+          "pnpm",
           [
+            "create-app",
             "--local",
             "--template=node",
             `--name=${appName}`,
             `--path=${path.join(homeDir, "Desktop")}`,
           ],
           defaultOpts
-        );
+        )
 
-        // there are some bugs with lockfiles and local references
-        ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"].forEach((lockFile) => {
-          let lockFilePath = path.join(appPath, lockFile);
-          if (fs.existsSync(lockFilePath)) {
-            fs.rmSync(lockFilePath);
-          }
-        });
-
-        break;
-      case "nightly":
-        log(`Creating new app in '${appPath}'...`);
-        let initArgs = ["--template=node", `--name=${appName}`, `--path=${path.join(homeDir, "Desktop")}`];
-        switch (nodePackageManager) {
-          case "yarn":
-            // yarn doesn't support 'create @shopify/app@nightly' syntax
-            await execa(
-              "npm",
-              [
-                "init",
-                "@shopify/app@nightly",
-                "--package-manager=yarn",
-                "--",
-                ...initArgs
-              ],
-              defaultOpts
-            );
-            break;
-          case "pnpm":
-            await execa(
-              nodePackageManager,
-              [
-                "create",
-                "@shopify/app@nightly",
-                ...initArgs
-              ],
-              defaultOpts
-            );
-            break;
-          case "npm":
-            await execa(
-              "npm",
-              [
-                "init",
-                "@shopify/app@nightly",
-                "--",
-                ...initArgs
-              ],
-              defaultOpts
-            );
+        // there is a bug with pnpm and local references on windows:
+        // https://github.com/pnpm/pnpm/issues/5510
+        if (os.platform() == "win32") {
+          fs.rmSync(path.join(appPath, "pnpm-lock.yaml"))
         }
 
-        break;
+        break
+      case "nightly":
+        log(`Creating new app in ${appPath}...`)
+        await execa(
+          "pnpm",
+          [
+            "create",
+            "@shopify/app@nightly",
+            "--template=node",
+            `--name=${appName}`,
+            `--path=${path.join(homeDir, "Desktop")}`,
+          ],
+          defaultOpts
+        )
+
+        break
       default:
-        log(
-          `Invalid installation type: ${
-            options.install
-          }. Must be one of ${installationTypes.join(", ")}.`
-        );
-        process.exit(1);
+        log(`Invalid installation type: ${options.install}. Must be one of ${installationTypes.join(", ")}.`)
+        process.exit(1)
     }
 
     // on windows pnpm sets the wrong paths, rerunning install fixes it
-    log("Making sure node is setup correctly...");
-    await appExec(nodePackageManager, ["install"]);
+    log("Making sure pnpm is setup correctly")
+    await appExec("pnpm", ["install"])
 
     if (extensions.has("ui")) {
-      log("Generating UI extension...");
-      await generateExtension([
+      log("Generating UI extension...")
+      await appExec("pnpm", [
+        "generate",
+        "extension",
         "--type=subscription_ui",
         "--name=sub-ui-ext",
         "--template=vanilla-js",
-      ]);
-      await appDev();
+      ])
+      await pnpmDev()
     }
 
     if (extensions.has("theme")) {
       // set Ruby version inside app or CLI2 will complain
-      fs.writeFileSync(path.join(appPath, ".ruby-version"), "3.2.1");
+      fs.writeFileSync(path.join(appPath, ".ruby-version"), "3.2.1")
 
-      log("Generating Theme App extension...");
-      await generateExtension([
+      log("Generating Theme App extension...")
+      await appExec("pnpm", [
+        "generate",
+        "extension",
         "--type=theme_app_extension",
         "--name=theme-app-ext",
-      ]);
-      await appDev();
+      ])
+      await pnpmDev()
     }
 
     if (extensions.has("function")) {
-      log("Generating JS function...");
-      const functionDir = path.join(appPath, "extensions", "prod-discount-fun");
-      await generateExtension([
+      log("Generating JS function...")
+      const functionDir = path.join(appPath, "extensions", "prod-discount-fun")
+      await appExec("pnpm", [
+        "generate",
+        "extension",
         "--type=product_discounts",
         "--name=prod-discount-fun",
         "--template=typescript",
-      ]);
-      await appExec(nodePackageManager, ["run", "build"], { cwd: functionDir });
-      const previewProcess = execa(nodePackageManager, ["run", "preview"], {
+      ])
+      await appExec("pnpm", ["build"], { cwd: functionDir })
+      const previewProcess = execa("pnpm", ["preview"], {
         cwd: functionDir,
         stdout: "inherit",
-      });
-      Readable.from(['{"discountNode":{"metafield":null}}']).pipe(
-        previewProcess.stdin
-      );
-      await previewProcess;
+      })
+      Readable.from(['{"discountNode":{"metafield":null}}']).pipe(previewProcess.stdin)
+      await previewProcess
     }
 
     if (options.deploy) {
-      log("Deploying your app...");
-      await appNodeExec(["shopify", "app", "deploy"], ["-f"]);
+      log("Deploying your app...")
+      await appExec("pnpm", ["shopify", "app", "deploy", "-f"])
     }
 
     if (options.cleanup) {
-      log(`Removing app in '${appPath}'...`);
-      fs.rmSync(appPath, { recursive: true });
+      log(`Removing app in '${appPath}'...`)
+      fs.rmSync(appPath, { recursive: true })
     }
 
-    log("All done! 🎉");
-  });
+    log("All done! 🎉")
+  })
 
 // run it
-program.parse();
+program.parse()

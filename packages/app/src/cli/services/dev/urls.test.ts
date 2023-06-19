@@ -41,7 +41,7 @@ beforeEach(() => {
 })
 
 const defaultOptions: FrontendURLOptions = {
-  app: testApp(),
+  app: testApp({hasUIExtensions: () => false}),
   noTunnel: false,
   tunnelUrl: undefined,
   commandConfig: new Config({root: ''}),
@@ -260,7 +260,7 @@ describe('generateFrontendURL', () => {
     // Given
     const options = {
       ...defaultOptions,
-      app: testApp(),
+      app: testApp({hasUIExtensions: () => true}),
       tunnelUrl: 'https://my-tunnel-provider.io:4242',
     }
 

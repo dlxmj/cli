@@ -50,56 +50,6 @@ function matchByNameAndType(
   return {matched: validMatches, pending: {local: pendingLocal, remote: pendingRemote}}
 }
 
-function migrateLegacyFunctions(
-  ids: IdentifiersExtensions,
-  localSources: LocalSource[],
-  remoteSources: RemoteSource[],
-): {
-  migrated: IdentifiersExtensions
-  pending: {local: LocalSource[]; remote: RemoteSource[]}
-} {
-  const migrated: IdentifiersExtensions = {}
-  const pendingMigrations: IdentifiersExtensions = {}
-
-  remoteSources
-    .filter((extension) => extension.type === 'FUNCTION')
-    .forEach((functionExtension) => {
-      const config = functionExtension.draftVersion?.config
-      if (config === undefined) return
-
-      const parsedConfig = JSON.parse(config)
-      const legacyId = parsedConfig.legacy_function_id
-      if (legacyId) pendingMigrations[legacyId] = functionExtension.uuid
-
-      const legacyUuid = parsedConfig.legacy_function_uuid
-      if (legacyUuid) pendingMigrations[legacyUuid] = functionExtension.uuid
-    })
-
-  localSources
-    .filter((extension) => extension.type === 'function')
-    .forEach((functionExtension) => {
-      const localId = ids[functionExtension.localIdentifier]
-      if (localId === undefined) return
-
-      const remoteId = pendingMigrations[localId]
-      if (remoteId) {
-        delete pendingMigrations[functionExtension.localIdentifier]
-        migrated[functionExtension.localIdentifier] = remoteId
-      }
-    })
-
-  const pendingLocal = localSources.filter((elem) => !migrated[elem.localIdentifier])
-  const pendingRemote = remoteSources.filter((registration) => !Object.values(migrated).includes(registration.uuid))
-
-  return {
-    migrated,
-    pending: {
-      local: pendingLocal,
-      remote: pendingRemote,
-    },
-  }
-}
-
 /**
  * Ask the user to confirm the relationship between a local source and a remote source if they
  * the only ones of their types.
@@ -175,18 +125,12 @@ export async function automaticMatchmaking(
       (remote) => remote[remoteIdField] === ids[local.localIdentifier] && remote.type === local.graphQLType,
     )
 
-  const {migrated: migratedFunctions, pending: pendingAfterMigratingFunctions} = migrateLegacyFunctions(
-    ids,
-    localSources.filter((local) => !existsRemotely(local)),
-    remoteSources.filter((remote) => !localUUIDs.includes(remote[remoteIdField])),
-  )
-
   // We try to automatically match sources if they have the same name and type,
   // by considering local sources which are missing on the remote side and
   // remote sources which are not synchronized locally.
   const {matched: matchedByNameAndType, pending: matchResult} = matchByNameAndType(
-    pendingAfterMigratingFunctions.local,
-    pendingAfterMigratingFunctions.remote,
+    localSources.filter((local) => !existsRemotely(local)),
+    remoteSources.filter((remote) => !localUUIDs.includes(remote[remoteIdField])),
     remoteIdField,
   )
 
@@ -197,7 +141,7 @@ export async function automaticMatchmaking(
   const {toConfirm, toCreate, pending} = matchByUniqueType(matchResult.local, matchResult.remote)
 
   return {
-    identifiers: {...ids, ...matchedByNameAndType, ...migratedFunctions},
+    identifiers: {...ids, ...matchedByNameAndType},
     toConfirm,
     toCreate,
     toManualMatch: pending,
