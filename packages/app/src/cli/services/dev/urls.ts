@@ -121,7 +121,11 @@ async function pollTunnelURL(tunnelClient: TunnelClient): Promise<string> {
   })
 }
 
-export function generatePartnersURLs(baseURL: string, authCallbackPath?: string | string[]): PartnersURLs {
+export function generatePartnersURLs(
+  baseURL: string,
+  authCallbackPath?: string | string[],
+  appUrlPath?: string,
+): PartnersURLs {
   let redirectUrlWhitelist: string[]
   if (authCallbackPath && authCallbackPath.length > 0) {
     const authCallbackPaths = Array.isArray(authCallbackPath) ? authCallbackPath : [authCallbackPath]
@@ -140,13 +144,24 @@ export function generatePartnersURLs(baseURL: string, authCallbackPath?: string 
   }
 
   return {
-    applicationUrl: baseURL,
+    applicationUrl: appUrlPath ? `${baseURL}${appUrlPath}` : baseURL,
     redirectUrlWhitelist,
   }
 }
 
-export async function updateURLs(urls: PartnersURLs, apiKey: string, token: string): Promise<void> {
-  const variables: UpdateURLsQueryVariables = {apiKey, ...urls}
+type appProxyURL = {proxySubPathPrefix: string; proxySubPath: string; proxyUrl: string}
+
+export async function updateURLs(
+  urls: PartnersURLs,
+  apiKey: string,
+  token: string,
+  appProxyURL?: appProxyURL,
+): Promise<void> {
+  const variables: UpdateURLsQueryVariables = {
+    apiKey,
+    ...urls,
+    ...(appProxyURL ? {appProxyInput: appProxyURL} : {}),
+  }
   const query = UpdateURLsQuery
   const result: UpdateURLsQuerySchema = await partnersRequest(query, token, variables)
   if (result.appUpdate.userErrors.length > 0) {

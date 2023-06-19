@@ -1,6 +1,6 @@
 {
-  "name": "@shopify/app",
-  "version": "3.46.5",
+  "name": "dlxmj-shopify-app",
+  "version": "3.46.10",
   "description": "Utilities for loading, building, and publishing apps.",
   "homepage": "https://github.com/shopify/cli#readme",
   "bugs": {

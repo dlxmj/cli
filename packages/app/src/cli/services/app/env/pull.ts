@@ -15,8 +15,13 @@ export async function pullEnv(app: AppInterface, {envFile}: PullEnvOptions): Pro
 
 export async function updateEnvFile(app: AppInterface, envFile: PullEnvOptions['envFile']): Promise<OutputMessage> {
   const selectedApp = await selectApp()
-
+  let isNextJs: boolean = false
+  for (const web of app.webs) {
+    isNextJs = web.framework?.toLowerCase() === 'nextjs'
+    if (isNextJs) break
+  }
   const updatedValues = {
+    ...(isNextJs ? {NEXT_PUBLIC_SHOPIFY_API_KEY: selectedApp.apiKey} : {}),
     SHOPIFY_API_KEY: selectedApp.apiKey,
     SHOPIFY_API_SECRET: selectedApp.apiSecretKeys[0]?.secret,
     SCOPES: app.configuration.scopes,

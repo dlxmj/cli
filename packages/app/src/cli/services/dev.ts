@@ -135,19 +135,24 @@ async function dev(options: DevOptions) {
 
   let previewUrl
   if (frontendConfig || backendConfig) {
-    previewUrl = buildAppURLForWeb(storeFqdn, exposedUrl)
+    const appConfiguration = backendConfig?.configuration ?? frontendConfig?.configuration
+    const appUrlPath = appConfiguration?.appUrlPath
+    previewUrl = buildAppURLForWeb(storeFqdn, appUrlPath ? `${exposedUrl}${appUrlPath}` : exposedUrl)
+
     if (options.update) {
-      const newURLs = generatePartnersURLs(
-        exposedUrl,
-        backendConfig?.configuration.authCallbackPath ?? frontendConfig?.configuration.authCallbackPath,
-      )
+      const newURLs = generatePartnersURLs(exposedUrl, appConfiguration?.authCallbackPath, appUrlPath)
+      const appProxyUrl = appConfiguration?.appProxyUrl && {
+        ...appConfiguration.appProxyUrl,
+        proxyUrl: `${exposedUrl}${appConfiguration.appProxyUrl.proxyUrl}`,
+      }
+
       shouldUpdateURLs = await shouldOrPromptUpdateURLs({
         currentURLs,
         appDirectory: localApp.directory,
         cachedUpdateURLs,
         newApp: remoteApp.newApp,
       })
-      if (shouldUpdateURLs) await updateURLs(newURLs, apiKey, token)
+      if (shouldUpdateURLs) await updateURLs(newURLs, apiKey, token, appProxyUrl)
       await outputUpdateURLsResult(shouldUpdateURLs, newURLs, remoteApp)
     }
   }
@@ -332,7 +337,7 @@ function devThemeExtensionTarget(
 function devFrontendProxyTarget(options: DevFrontendTargetOptions): ReverseHTTPProxyTarget {
   const {commands} = options.web.configuration
   const [cmd, ...args] = commands.dev.split(' ')
-
+  let isNextJs: boolean = options.web.framework?.toLowerCase() === 'nextjs'
   return {
     logPrefix: options.web.configuration.type,
     customPort: options.web.configuration.port,
@@ -343,6 +348,7 @@ function devFrontendProxyTarget(options: DevFrontendTargetOptions): ReverseHTTPP
         stderr,
         env: {
           ...(await getDevEnvironmentVariables(options)),
+          ...(isNextJs ? {NEXT_PUBLIC_SHOPIFY_API_KEY: options.apiKey} : {}),
           BACKEND_PORT: `${options.backendPort}`,
           PORT: `${port}`,
           FRONTEND_PORT: `${port}`,
@@ -374,8 +380,10 @@ async function getDevEnvironmentVariables(options: DevWebOptions) {
 async function devBackendTarget(web: Web, options: DevWebOptions): Promise<OutputProcess> {
   const {commands} = web.configuration
   const [cmd, ...args] = commands.dev.split(' ')
+  let isNextJs: boolean = web.framework?.toLowerCase() === 'nextjs'
   const env = {
     ...(await getDevEnvironmentVariables(options)),
+    ...(isNextJs ? {NEXT_PUBLIC_SHOPIFY_API_KEY: options.apiKey} : {}),
     // SERVER_PORT is the convention Artisan uses
     PORT: `${options.backendPort}`,
     SERVER_PORT: `${options.backendPort}`,

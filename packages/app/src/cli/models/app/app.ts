@@ -28,6 +28,14 @@ export const WebConfigurationSchema = zod.object({
     .optional(),
   webhooksPath: zod.preprocess(ensurePathStartsWithSlash, zod.string()).optional(),
   port: zod.number().max(65536).min(0).optional(),
+  appUrlPath: zod.preprocess(ensurePathStartsWithSlash, zod.string()).optional(),
+  appProxyUrl: zod
+    .object({
+      proxySubPathPrefix: zod.string(),
+      proxySubPath: zod.string(),
+      proxyUrl: zod.string(),
+    })
+    .optional(),
   commands: zod.object({
     build: zod.string().optional(),
     dev: zod.string(),
