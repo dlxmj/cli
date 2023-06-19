@@ -1,7 +1,6 @@
 {
     "name": "ui-extensions-server-kit",
     "root": "packages/ui-extensions-server-kit",
-    "$schema": "../../node_modules/nx/schemas/project-schema.json",
     "sourceRoot": "packages/ui-extensions-server-kit/src",
     "projectType": "library",
     "implicitDependencies": ["ui-extensions-test-utils"],
@@ -10,14 +9,14 @@
       "clean": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm rimraf dist/",
+          "command": "yarn rimraf dist/",
           "cwd": "packages/ui-extensions-server-kit"
         }
       },
       "build:code": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm vite build --config vite.config.ts",
+          "command": "yarn vite build --config vite.config.ts",
           "cwd": "packages/ui-extensions-server-kit"
         }
       },
@@ -25,7 +24,7 @@
         "executor": "nx:run-commands",
         "dependsOn": ["^build"],
         "options": {
-          "command": "pnpm tsc --emitDeclarationOnly",
+          "command": "yarn tsc --emitDeclarationOnly",
           "cwd": "packages/ui-extensions-server-kit"
         }
       },
@@ -42,14 +41,14 @@
       "lint": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm eslint src",
+          "command": "yarn eslint src",
           "cwd": "packages/ui-extensions-server-kit"
         }
       },
       "lint:fix": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm eslint src --fix",
+          "command": "yarn eslint src --fix",
           "cwd": "packages/ui-extensions-server-kit"
         }
       },
@@ -57,7 +56,7 @@
         "executor": "nx:run-commands",
         "dependsOn": ["^build"],
         "options": {
-          "command": "pnpm vitest run",
+          "command": "yarn vitest run",
           "cwd": "packages/ui-extensions-server-kit"
         }
       },
@@ -65,7 +64,7 @@
         "executor": "nx:run-commands",
         "dependsOn": ["^build"],
         "options": {
-          "command": "pnpm vitest watch",
+          "command": "yarn vitest watch",
           "cwd": "packages/ui-extensions-server-kit"
         }
       }

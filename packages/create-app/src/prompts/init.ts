@@ -1,5 +1,5 @@
+import {ui} from '@shopify/cli-kit'
 import {generateRandomNameForSubdirectory} from '@shopify/cli-kit/node/fs'
-import {renderText, renderSelectPrompt, renderTextPrompt} from '@shopify/cli-kit/node/ui'
 
 interface InitOptions {
   name?: string
@@ -10,67 +10,62 @@ interface InitOptions {
 interface InitOutput {
   name: string
   template: string
-  // e.g. 'node', 'ruby', 'php'
-  templateType: keyof typeof templateURLMap | 'custom'
 }
 
 // Eventually this list should be taken from a remote location
 // That way we don't have to update the CLI every time we add a template
 export const templateURLMap = {
-  node: 'https://github.com/Shopify/shopify-app-template-node',
-  php: 'https://github.com/Shopify/shopify-app-template-php',
+  node: 'https://github.com/Shopify/shopify-app-template-node#cli_three',
+  php: 'https://github.com/Shopify/shopify-app-template-php#cli_three',
   ruby: 'https://github.com/Shopify/shopify-app-template-ruby',
 } as const
 
-const init = async (options: InitOptions): Promise<InitOutput> => {
-  let name = options.name
-  let template = options.template
-
+const init = async (options: InitOptions, prompt = ui.prompt): Promise<InitOutput> => {
   const defaults = {
     name: await generateRandomNameForSubdirectory({suffix: 'app', directory: options.directory}),
     template: templateURLMap.node,
   } as const
 
-  renderText({text: '\nWelcome. Let’s get started by naming your app project. You can change it later.'})
-
-  if (!name) {
-    name = await renderTextPrompt({
-      message: 'Your app project name?',
-      defaultValue: defaults.name,
+  const questions: ui.Question<'name' | 'template'>[] = []
+  if (!options.name) {
+    questions.push({
+      type: 'input',
+      name: 'name',
+      preface: '\nWelcome. Let’s get started by naming your app. You can change it later.',
+      message: "Your app's name?",
+      default: defaults.name,
       validate: (value) => {
         if (value.length === 0) {
-          return "App name can't be empty"
+          return "App Name can't be empty"
         }
         if (value.length > 30) {
           return 'Enter a shorter name (30 character max.)'
         }
-        if (value.toLowerCase().includes('shopify')) {
-          return "App name can't include the word 'shopify'"
-        }
+        return true
       },
     })
   }
 
-  if (!template) {
-    template = await renderSelectPrompt({
-      choices: Object.keys(templateURLMap).map((key) => {
-        return {
-          label: key,
-          value: key,
-        }
-      }),
+  if (!options.template && Object.keys(templateURLMap).length > 1) {
+    const templateList = Object.keys(templateURLMap).map((key) => {
+      return {
+        name: key,
+        value: key,
+      }
+    })
+    questions.push({
+      type: 'select',
+      name: 'template',
+      choices: templateList,
       message: 'Which template would you like to use?',
-      defaultValue: Object.keys(templateURLMap).find(
-        (key) => templateURLMap[key as 'node' | 'php' | 'ruby'] === defaults.template,
-      ),
+      default: defaults.template,
     })
   }
 
-  const answers: InitOutput = {
+  const promptOutput: InitOutput = await prompt(questions)
+  const answers = {
     ...options,
-    name,
-    template,
-    templateType: Object.hasOwn(templateURLMap, template) ? (template as keyof typeof templateURLMap) : 'custom',
+    ...promptOutput,
   }
 
   const templateURL = templateURLMap[answers.template as keyof typeof templateURLMap]

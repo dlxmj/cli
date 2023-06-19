@@ -1,49 +1,75 @@
-import {zod} from '@shopify/cli-kit/node/schema'
+import {schema} from '@shopify/cli-kit'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ZodSchemaType<T> = zod.ZodType<T, any, any>
+export type ZodSchemaType<T> = schema.define.ZodType<T, any, any>
 
-export const MetafieldSchema = zod.object({
-  namespace: zod.string(),
-  key: zod.string(),
+export const MetafieldSchema = schema.define.object({
+  namespace: schema.define.string(),
+  key: schema.define.string(),
 })
 
-export const CapabilitiesSchema = zod.object({
-  network_access: zod.boolean().optional(),
-  block_progress: zod.boolean().optional(),
-  api_access: zod.boolean().optional(),
+export const CapabilitiesSchema = schema.define.object({
+  network_access: schema.define.boolean().optional(),
+  block_progress: schema.define.boolean().optional(),
 })
 
-export const TypeSchema = zod.object({
-  type: zod.string().default('ui_extension'),
+export const TypeSchema = schema.define.object({
+  type: schema.define.string().default('ui_extension'),
 })
 
-export const NewExtensionPointSchema = zod.object({
-  target: zod.string(),
-  module: zod.string(),
-  label: zod.string().optional(),
-  metafields: zod.array(MetafieldSchema).optional(),
+export const NewExtensionPointSchema = schema.define.object({
+  target: schema.define.string(),
+  module: schema.define.string(),
+  metafields: schema.define.array(MetafieldSchema).optional(),
 })
 
-export const OldExtensionPointsSchema = zod.array(zod.string()).default([])
-export const NewExtensionPointsSchema = zod.array(NewExtensionPointSchema)
-export const ExtensionPointSchema = zod.union([OldExtensionPointsSchema, NewExtensionPointsSchema])
-export const ApiVersionSchema = zod.string()
+export const OldExtensionPointsSchema = schema.define.array(schema.define.string()).default([])
+export const NewExtensionPointsSchema = schema.define.array(NewExtensionPointSchema)
+export const ExtensionPointSchema = schema.define.union([OldExtensionPointsSchema, NewExtensionPointsSchema])
 
-export type ApiVersionSchemaType = zod.infer<typeof ApiVersionSchema>
-
-export const BaseSchema = zod.object({
-  name: zod.string(),
-  type: zod.string(),
-  description: zod.string().optional(),
-  apiVersion: ApiVersionSchema.optional(),
-  extensionPoints: zod.any().optional(),
-  capabilities: CapabilitiesSchema.optional(),
-  metafields: zod.array(MetafieldSchema).optional().default([]),
-  categories: zod.array(zod.string()).optional(),
+export const BaseExtensionSchema = schema.define.object({
+  name: schema.define.string(),
+  type: schema.define.string().default('ui_extension'),
+  extensionPoints: schema.define.any().optional(),
+  capabilities: schema.define
+    .object({
+      block_progress: schema.define.boolean().optional(),
+      network_access: schema.define.boolean().optional(),
+    })
+    .optional(),
+  metafields: schema.define.array(MetafieldSchema).optional().default([]),
+  categories: schema.define.array(schema.define.string()).optional(),
 })
 
-export type NewExtensionPointSchemaType = zod.infer<typeof NewExtensionPointSchema>
+export const BaseFunctionConfigurationSchema = schema.define.object({
+  name: schema.define.string(),
+  type: schema.define.string(),
+  description: schema.define.string().optional().default(''),
+  build: schema.define.object({
+    command: schema.define.string(),
+    path: schema.define.string().optional(),
+  }),
+  configurationUi: schema.define.boolean().optional().default(true),
+  ui: schema.define
+    .object({
+      paths: schema.define
+        .object({
+          create: schema.define.string(),
+          details: schema.define.string(),
+        })
+        .optional(),
+    })
+    .optional(),
+  apiVersion: schema.define.string(),
+})
 
-// Base config type that all config schemas must extend.
-export type BaseConfigType = zod.infer<typeof BaseSchema>
+export const BaseFunctionMetadataSchema = schema.define.object({
+  schemaVersions: schema.define.object({}).catchall(
+    schema.define.object({
+      major: schema.define.number(),
+      minor: schema.define.number(),
+    }),
+  ),
+})
+
+export type NewExtensionPointSchemaType = schema.define.infer<typeof NewExtensionPointSchema>

@@ -1,8 +1,8 @@
-import {renderDev} from '../../services/dev/output.js'
-import {RenderConcurrentOptions} from '@shopify/cli-kit/node/ui'
+import {output, abort} from '@shopify/cli-kit'
+import httpProxy from 'http-proxy'
+import {renderConcurrent} from '@shopify/cli-kit/node/ui'
+import {AbortController} from 'abort-controller'
 import {getAvailableTCPPort} from '@shopify/cli-kit/node/tcp'
-import {AbortController, AbortSignal} from '@shopify/cli-kit/node/abort'
-import {OutputProcess, outputDebug, outputContent, outputToken, outputWarn} from '@shopify/cli-kit/node/output'
 import {Writable} from 'stream'
 import * as http from 'http'
 
@@ -11,11 +11,6 @@ export interface ReverseHTTPProxyTarget {
    *   [vite] Output coming from Vite
    */
   logPrefix: string
-
-  /**
-   * The port to use for the target HTTP server. When undefined, a random port is automatically assigned.
-   */
-  customPort?: number
 
   /**
    * The HTTP path prefix used to match against request and determine if the traffic should be
@@ -27,14 +22,7 @@ export interface ReverseHTTPProxyTarget {
    * to send standard output and error data that gets formatted with the
    * right prefix.
    */
-  action: (stdout: Writable, stderr: Writable, signal: AbortSignal, port: number) => Promise<void> | void
-}
-
-interface Options {
-  previewUrl: string | undefined
-  portNumber: number
-  proxyTargets: ReverseHTTPProxyTarget[]
-  additionalProcesses: OutputProcess[]
+  action: (stdout: Writable, stderr: Writable, signal: abort.Signal, port: number) => Promise<void> | void
 }
 
 /**
@@ -46,22 +34,17 @@ interface Options {
  * @param additionalProcesses - Additional processes to run. The proxy won't forward traffic to these processes.
  * @returns A promise that resolves with an interface to get the port of the proxy and stop it.
  */
-export async function runConcurrentHTTPProcessesAndPathForwardTraffic({
-  previewUrl,
-  portNumber,
-  proxyTargets,
-  additionalProcesses,
-}: Options): Promise<void> {
-  // Lazy-importing it because it's CJS and we don't want it
-  // to block the loading of the ESM module graph.
-  const {default: httpProxy} = await import('http-proxy')
-
+export async function runConcurrentHTTPProcessesAndPathForwardTraffic(
+  portNumber: number | undefined = undefined,
+  proxyTargets: ReverseHTTPProxyTarget[],
+  additionalProcesses: output.OutputProcess[],
+): Promise<void> {
   const rules: {[key: string]: string} = {}
 
   const processes = await Promise.all(
-    proxyTargets.map(async (target): Promise<OutputProcess> => {
-      const targetPort = target.customPort || (await getAvailableTCPPort())
-      rules[target.pathPrefix ?? 'default'] = `http://localhost:${targetPort}`
+    proxyTargets.map(async (target): Promise<output.OutputProcess> => {
+      const targetPort = await getAvailableTCPPort()
+      rules[target.pathPrefix ?? '/'] = `http://localhost:${targetPort}`
       return {
         prefix: target.logPrefix,
         action: async (stdout, stderr, signal) => {
@@ -71,25 +54,23 @@ export async function runConcurrentHTTPProcessesAndPathForwardTraffic({
     }),
   )
 
-  outputDebug(outputContent`
-Starting reverse HTTP proxy on port ${outputToken.raw(portNumber.toString())}
+  const availablePort = portNumber ?? (await getAvailableTCPPort())
+
+  output.debug(output.content`
+Starting reverse HTTP proxy on port ${output.token.raw(availablePort.toString())}
 Routing traffic rules:
-${outputToken.json(JSON.stringify(rules))}
+${output.token.json(JSON.stringify(rules))}
 `)
 
   const proxy = httpProxy.createProxy()
   const server = http.createServer(function (req, res) {
     const target = match(rules, req)
-    if (target) {
-      return proxy.web(req, res, {target}, (err) => {
-        outputWarn(`Error forwarding web request: ${err}`)
-      })
-    }
+    if (target) return proxy.web(req, res, {target})
 
-    outputDebug(`
+    output.debug(`
 Reverse HTTP proxy error - Invalid path: ${req.url}
 These are the allowed paths:
-${outputToken.json(JSON.stringify(rules))}
+${output.token.json(JSON.stringify(rules))}
 `)
 
     res.statusCode = 500
@@ -99,11 +80,7 @@ ${outputToken.json(JSON.stringify(rules))}
   // Capture websocket requests and forward them to the proxy
   server.on('upgrade', function (req, socket, head) {
     const target = match(rules, req)
-    if (target) {
-      return proxy.ws(req, socket, head, {target}, (err) => {
-        outputWarn(`Error forwarding websocket request: ${err}`)
-      })
-    }
+    if (target) return proxy.ws(req, socket, head, {target})
     socket.destroy()
   })
 
@@ -111,13 +88,13 @@ ${outputToken.json(JSON.stringify(rules))}
   abortController.signal.addEventListener('abort', () => {
     server.close()
   })
-
-  const renderConcurrentOptions: RenderConcurrentOptions = {
-    processes: [...processes, ...additionalProcesses],
-    abortSignal: abortController.signal,
-  }
-
-  await Promise.all([renderDev(renderConcurrentOptions, previewUrl), server.listen(portNumber)])
+  await Promise.all([
+    renderConcurrent({
+      processes: [...processes, ...additionalProcesses],
+      abortController,
+    }),
+    server.listen(availablePort),
+  ])
 }
 
 function match(rules: {[key: string]: string}, req: http.IncomingMessage) {
@@ -127,5 +104,5 @@ function match(rules: {[key: string]: string}, req: http.IncomingMessage) {
     if (path.startsWith(pathPrefix)) return rules[pathPrefix]
   }
 
-  return rules.default
+  return undefined
 }

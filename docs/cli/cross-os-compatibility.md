@@ -20,32 +20,15 @@ When implementing business logic that interacts with the OS, for example doing I
 
 Please don't assume that a successful working workflow in the OS in which it was developed will yield success in other OSs. **We strongly recommend manually testing the workflow in other OSs**. If you don't have a computer with a given OS, here are some recommendations to virtualize the environment:
 
-#### Linux ([Parallels](https://www.parallels.com/pd/general/))
+#### Linux ([Podman](https://podman.io/))
 
-Create a new Ubuntu 22 virtual machine, then:
-
-- `sudo apt-get update && sudo apt-get -y upgrade`
-- `curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -`
-- `sudo apt-get install -y git nodejs ruby-dev && sudo gem install bundler`
-- `curl -fsSL https://get.pnpm.io/install.sh | sh -`
-
-You can clone the CLI repository:
+Run the following command from the CLI directory to create an temporary virtual Linux environment:
 
 ```bash
-git clone https://github.com/Shopify/cli.git
+podman run --rm --interactive --tty node:18 /bin/bash
 ```
 
-Install all dependencies:
-
-```bash
-pnpm install
-```
-
-Now you can test creating an app and installing in your dev store:
-
-```bash
-node bin/create-test-app.js -e ui
-```
+Then clone the [CLI repository](https://github.com/Shopify/cli) and install the dependencies with `yarn install`.
 
 #### Windows ([Parallels](https://www.parallels.com/pd/general/))
 
@@ -53,33 +36,28 @@ After you've installed Parallels and virtualized the Windows environment, you ne
 
 - [Git](https://git-scm.com/download/win)
 - [Node](https://nodejs.org/en/download/)
-- [Ruby](https://rubyinstaller.org/downloads/) (needed for themes, Ruby+DevKit 3.0.x is recommended)
-- [PNPM](https://pnpm.io/installation)
-  - You will need to enable [long paths](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=powershell) support on windows:
-  - Search for Terminal, then right click and "Run as administrator". Then run:
-    ```
-    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
-    -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
-    ```
+- [Yarn](https://yarnpkg.com/)
+- [Python](https://www.python.org/downloads/windows/) (needed for `node-gyp`)
+- [Visual Studio](https://code.visualstudio.com/download) (needed for `node-gyp`, make sure you install the "Desktop development with C++" workload)
+- [Ruby](https://rubyinstaller.org/downloads/) (needed for themes, Ruby+DevKit 3.0.4 is recommended)
 
-We also recommend you install these programs for a better DX:
-- [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows)
-- [VS Code](https://code.visualstudio.com/download)
+Git provides a shell called "Git Bash" which you can use. First set your global git user and email:
 
-Please use **Windows Terminal** as your console. You can clone the CLI repository:
+```bash
+git config --global user.email "john.doe@gmail.com"
+git config --global user.name "John Doe"
+```
+
+Then you can clone the CLI repository:
 
 ```bash
 git clone https://github.com/Shopify/cli.git
 ```
 
-Install all dependencies:
+Now you can install dependencies with `yarn install`. If Yarn yields "unsigned scripts" errors execute the following command:
 
 ```bash
-pnpm install
+Set-ExecutionPolicy Unrestricted -Scope LocalMachine
 ```
 
-Now you can test creating an app and installing in your dev store:
-
-```bash
-node bin/create-test-app.js -e ui
-```
+Now you can run the test suite with `yarn test` and verify that everything works properly.

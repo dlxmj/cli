@@ -8,7 +8,7 @@ import {SetupWebSocketConnectionOptions} from './models.js'
 import {ExtensionsEndpointPayload} from '../payload/models.js'
 import {vi, describe, test, expect} from 'vitest'
 import WebSocket, {RawData, WebSocketServer} from 'ws'
-import {IncomingMessage} from 'h3'
+import {http} from '@shopify/cli-kit'
 import {Duplex} from 'stream'
 
 function getMockRequest() {
@@ -16,7 +16,7 @@ function getMockRequest() {
     url: '/extensions',
   }
 
-  return request as unknown as IncomingMessage
+  return request as unknown as http.IncomingMessage
 }
 
 function getMockSocket() {
@@ -56,7 +56,6 @@ function getMockSetupWebSocketConnectionOptions() {
       updateApp: vi.fn(),
       updateExtensions: vi.fn(),
     },
-    manifestVersion: '3',
   } as unknown as SetupWebSocketConnectionOptions
 }
 

@@ -1,23 +1,24 @@
 import Command from './base-command.js'
-import {Environments} from './environments.js'
-import {encodeToml as encodeTOML} from './toml.js'
-import {globalFlags} from './cli.js'
-import {inTemporaryDirectory, mkdir, writeFile} from './fs.js'
-import {joinPath, resolvePath, cwd} from './path.js'
-import {mockAndCaptureOutput} from './testing/output.js'
+import {Presets, presetsFilename} from './presets.js'
+import {globalFlags} from '../../cli.js'
+import {inTemporaryDirectory, mkdir, write as writeFile} from '../../file.js'
+import {mockAndCaptureOutput} from '../../testing/output.js'
+import {encode as encodeTOML} from '../../toml.js'
+import {join as pathJoin, resolve as resolvePath} from '../../path.js'
 import {describe, expect, test} from 'vitest'
 import {Flags} from '@oclif/core'
 
 let testResult: {[flag: string]: unknown} = {}
 let testError: Error | undefined
+let disableFindUpPresets = true
 
 class MockCommand extends Command {
-  /* eslint-disable @shopify/cli/command-flags-with-env */
+  /* eslint-disable rulesdir/command-flags-with-env */
   static flags = {
     ...globalFlags,
     path: Flags.string({
-      parse: async (input) => resolvePath(input),
-      default: async () => cwd(),
+      parse: (input, _) => Promise.resolve(resolvePath(input)),
+      default: '.',
     }),
     someString: Flags.string({}),
     someInteger: Flags.integer({}),
@@ -29,10 +30,8 @@ class MockCommand extends Command {
     someStringWithDefault: Flags.string({
       default: 'default stringy',
     }),
-    password: Flags.string({}),
-    environment: Flags.string({}),
   }
-  /* eslint-enable @shopify/cli/command-flags-with-env */
+  /* eslint-enable rulesdir/command-flags-with-env */
 
   async run(): Promise<void> {
     const {flags} = await this.parse(MockCommand)
@@ -43,88 +42,82 @@ class MockCommand extends Command {
     testError = error
   }
 
-  environmentsFilename(): string {
-    return 'shopify.environments.toml'
+  findUpForPresets() {
+    if (disableFindUpPresets) return false
+    return super.findUpForPresets()
   }
 }
 
-const validEnvironment = {
+const validPreset = {
   someString: 'stringy',
   someBoolean: true,
 }
 
-const validEnvironmentWithIrrelevantFlag = {
-  ...validEnvironment,
+const validPresetWithIrrelevantFlag = {
+  ...validPreset,
   irrelevantString: 'stringy',
 }
 
-const environmentWithIncorrectType = {
+const presetWithIncorrectType = {
   someInteger: 'stringy',
 }
 
-const environmentWithExclusiveArguments = {
+const presetWithExclusiveArguments = {
   someBoolean: true,
   someExclusiveString: 'exclusive stringy',
 }
 
-const environmentWithNegativeBoolean = {
+const presetWithNegativeBoolean = {
   someBoolean: false,
 }
 
-const environmentWithMultiples = {
+const presetWithMultiples = {
   someMultipleString: ['multiple', 'stringies'],
 }
 
-const environmentMatchingDefault = {
+const presetMatchingDefault = {
   someStringWithDefault: 'default stringy',
 }
 
-const environmentWithDefaultOverride = {
+const presetWithDefaultOverride = {
   someStringWithDefault: 'non-default stringy',
 }
 
-const environmentWithPassword = {
-  password: 'password',
+const allPresets: Presets = {
+  validPreset,
+  validPresetWithIrrelevantFlag,
+  presetWithIncorrectType,
+  presetWithExclusiveArguments,
+  presetWithNegativeBoolean,
+  presetWithMultiples,
+  presetMatchingDefault,
+  presetWithDefaultOverride,
 }
 
-const allEnvironments: Environments = {
-  environments: {
-    validEnvironment,
-    validEnvironmentWithIrrelevantFlag,
-    environmentWithIncorrectType,
-    environmentWithExclusiveArguments,
-    environmentWithNegativeBoolean,
-    environmentWithMultiples,
-    environmentMatchingDefault,
-    environmentWithDefaultOverride,
-    environmentWithPassword,
-  },
-}
-
-describe('applying environments', async () => {
+describe('applying presets', async () => {
   const runTestInTmpDir = (testName: string, testFunc: (tmpDir: string) => Promise<void>) => {
     test(testName, async () => {
       testResult = {}
       testError = undefined
+      disableFindUpPresets = false
 
       await inTemporaryDirectory(async (tmpDir) => {
-        await writeFile(joinPath(tmpDir, 'shopify.environments.toml'), encodeTOML(allEnvironments as any))
+        await writeFile(pathJoin(tmpDir, presetsFilename), encodeTOML(allPresets as any))
         await testFunc(tmpDir)
       })
     })
   }
 
-  function expectFlags(path: string, environment: keyof typeof allEnvironments) {
-    const envFlags = allEnvironments.environments && (allEnvironments.environments[environment] as Environments)
+  function expectFlags(path: string, preset: keyof typeof allPresets) {
     expect(testResult).toEqual({
       path: resolvePath(path),
       someStringWithDefault: 'default stringy',
-      environment,
-      ...envFlags,
+      preset,
+      ...allPresets[preset],
     })
   }
 
-  runTestInTmpDir('does not apply a environment when none is specified', async (tmpDir: string) => {
+  runTestInTmpDir('does not apply a preset when none is specified', async (tmpDir: string) => {
     // Given
     const outputMock = mockAndCaptureOutput()
     outputMock.clear()
@@ -140,196 +133,175 @@ describe('applying environments', async () => {
     expect(outputMock.info()).toEqual('')
   })
 
-  runTestInTmpDir('applies a environment when one is specified', async (tmpDir: string) => {
+  runTestInTmpDir('applies a preset when one is specified', async (tmpDir: string) => {
     // Given
     const outputMock = mockAndCaptureOutput()
     outputMock.clear()
 
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'validEnvironment'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'validPreset'])
 
     // Then
-    expectFlags(tmpDir, 'validEnvironment')
+    expectFlags(tmpDir, 'validPreset')
     expect(outputMock.info()).toMatchInlineSnapshot(`
-      "╭─ info ───────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  Using applicable flags from validEnvironment environment:                   │
-      │                                                                              │
-      │    • someString: stringy                                                     │
-      │    • someBoolean: true                                                       │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
-      "
+      "Using applicable flags from the preset validPreset:
+
+      • someString = stringy
+      • someBoolean = true\n"
     `)
   })
 
   runTestInTmpDir('searches up recursively from path by default', async (tmpDir: string) => {
     // Given
-    const subdir = joinPath(tmpDir, 'somedir', '--environment', 'validEnvironment')
+    const subdir = pathJoin(tmpDir, 'somedir', '--preset', 'validPreset')
     await mkdir(subdir)
 
     // When
-    await MockCommand.run(['--path', subdir, '--environment', 'validEnvironment'])
+    await MockCommand.run(['--path', subdir, '--preset', 'validPreset'])
 
     // Then
-    expectFlags(subdir, 'validEnvironment')
+    expectFlags(subdir, 'validPreset')
   })
 
-  runTestInTmpDir('prefers command line arguments to environment settings', async (tmpDir: string) => {
+  runTestInTmpDir(
+    'searches only in the current directory when recursive search is disabled',
+    async (tmpDir: string) => {
+      // Given
+      const subdir = pathJoin(tmpDir, 'somedir')
+      await mkdir(subdir)
+      disableFindUpPresets = true
+
+      // When
+      await MockCommand.run(['--path', subdir, '--preset', 'validPreset'])
+
+      // Then
+      expect(testResult).toEqual({
+        path: resolvePath(subdir),
+        preset: 'validPreset',
+        // no flags applied from the preset
+        someStringWithDefault: 'default stringy',
+      })
+    },
+  )
+
+  runTestInTmpDir('prefers command line arguments to preset settings', async (tmpDir: string) => {
     // Given
     const outputMock = mockAndCaptureOutput()
     outputMock.clear()
 
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'validEnvironment', '--someString', 'cheesy'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'validPreset', '--someString', 'cheesy'])
 
     // Then
     expect(testResult.someString).toEqual('cheesy')
     expect(outputMock.info()).toMatchInlineSnapshot(`
-      "╭─ info ───────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  Using applicable flags from validEnvironment environment:                   │
-      │                                                                              │
-      │    • someBoolean: true                                                       │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
-      "
+      "Using applicable flags from the preset validPreset:
+
+      • someBoolean = true\n"
     `)
   })
 
-  runTestInTmpDir('ignores the specified environment when it does not exist', async (tmpDir: string) => {
+  runTestInTmpDir('ignores the specified preset when it does not exist', async (tmpDir: string) => {
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'nonexistentEnvironment'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'nonexistentPreset'])
 
     // Then
     expect(testResult).toEqual({
       path: resolvePath(tmpDir),
-      environment: 'nonexistentEnvironment',
+      preset: 'nonexistentPreset',
       someStringWithDefault: 'default stringy',
     })
   })
 
   runTestInTmpDir('does not apply flags irrelevant to the current command', async (tmpDir: string) => {
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'validEnvironmentWithIrrelevantFlag'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'validPresetWithIrrelevantFlag'])
 
     // Then
     expect(testResult).toEqual({
       path: resolvePath(tmpDir),
-      environment: 'validEnvironmentWithIrrelevantFlag',
-      ...validEnvironment,
+      preset: 'validPresetWithIrrelevantFlag',
+      ...validPreset,
       someStringWithDefault: 'default stringy',
     })
   })
 
   runTestInTmpDir('throws when an argument of the incorrect type is provided', async (tmpDir: string) => {
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentWithIncorrectType'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'presetWithIncorrectType'])
 
     // Then
-    expect(testError?.message).toMatch('Expected an integer but received: stringy')
+    expect(testError?.message).toEqual('Expected an integer but received: stringy')
   })
 
   runTestInTmpDir('throws when exclusive arguments are provided', async (tmpDir: string) => {
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentWithExclusiveArguments'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'presetWithExclusiveArguments'])
 
     // Then
-    expect(testError?.message).toMatch('--someBoolean=true cannot also be provided when using --someExclusiveString')
+    expect(testError?.message).toMatch('--someBoolean= cannot also be provided when using --someExclusiveString')
   })
 
   runTestInTmpDir('throws on negated booleans', async (tmpDir: string) => {
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentWithNegativeBoolean'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'presetWithNegativeBoolean'])
 
     // Then
     expect(testError?.message).toMatch(
-      /Environments can only specify true for boolean flags\. Attempted to set .+someBoolean.+ to false\./,
+      /Presets can only specify true for boolean flags\. Attempted to set .+someBoolean.+ to false\./,
     )
   })
 
   runTestInTmpDir('handles multiples correctly', async (tmpDir: string) => {
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentWithMultiples'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'presetWithMultiples'])
 
     // Then
-    expectFlags(tmpDir, 'environmentWithMultiples')
+    expectFlags(tmpDir, 'presetWithMultiples')
   })
 
   runTestInTmpDir(
-    'throws when exclusive arguments are provided when combining command line + environment',
+    'throws when exclusive arguments are provided when combining command line + preset',
     async (tmpDir: string) => {
       // When
-      await MockCommand.run(['--path', tmpDir, '--environment', 'validEnvironment', '--someExclusiveString', 'stringy'])
+      await MockCommand.run(['--path', tmpDir, '--preset', 'validPreset', '--someExclusiveString', 'stringy'])
 
       // Then
-      expect(testError?.message).toMatch('--someBoolean=true cannot also be provided when using --someExclusiveString')
+      expect(testError?.message).toMatch('--someBoolean= cannot also be provided when using --someExclusiveString')
     },
   )
 
-  runTestInTmpDir('reports environment settings that do not match defaults', async (tmpDir: string) => {
+  runTestInTmpDir('reports preset settings that do not match defaults', async (tmpDir: string) => {
     // Given
     const outputMock = mockAndCaptureOutput()
     outputMock.clear()
 
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentWithDefaultOverride'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'presetWithDefaultOverride'])
 
     // Then
-    expectFlags(tmpDir, 'environmentWithDefaultOverride')
+    expectFlags(tmpDir, 'presetWithDefaultOverride')
     expect(outputMock.info()).toMatchInlineSnapshot(`
-      "╭─ info ───────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  Using applicable flags from environmentWithDefaultOverride environment:     │
-      │                                                                              │
-      │    • someStringWithDefault: non-default stringy                              │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
-      "
+      "Using applicable flags from the preset presetWithDefaultOverride:
+
+      • someStringWithDefault = non-default stringy\n"
     `)
   })
 
-  runTestInTmpDir('reports environment settings that match defaults', async (tmpDir: string) => {
+  runTestInTmpDir('reports preset settings that match defaults', async (tmpDir: string) => {
     // Given
     const outputMock = mockAndCaptureOutput()
     outputMock.clear()
 
     // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentMatchingDefault'])
+    await MockCommand.run(['--path', tmpDir, '--preset', 'presetMatchingDefault'])
 
     // Then
-    expectFlags(tmpDir, 'environmentMatchingDefault')
+    expectFlags(tmpDir, 'presetMatchingDefault')
     expect(outputMock.info()).toMatchInlineSnapshot(`
-      "╭─ info ───────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  Using applicable flags from environmentMatchingDefault environment:         │
-      │                                                                              │
-      │    • someStringWithDefault: default stringy                                  │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
-      "
-    `)
-  })
+      "Using applicable flags from the preset presetMatchingDefault:
 
-  runTestInTmpDir('reports environment settings with masked passwords', async (tmpDir: string) => {
-    // Given
-    const outputMock = mockAndCaptureOutput()
-    outputMock.clear()
-
-    // When
-    await MockCommand.run(['--path', tmpDir, '--environment', 'environmentWithPassword'])
-
-    // Then
-    expectFlags(tmpDir, 'environmentWithPassword')
-    expect(outputMock.info()).toMatchInlineSnapshot(`
-      "╭─ info ───────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  Using applicable flags from environmentWithPassword environment:            │
-      │                                                                              │
-      │    • password: ********word                                                  │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
-      "
+      • someStringWithDefault = default stringy\n"
     `)
   })
 })

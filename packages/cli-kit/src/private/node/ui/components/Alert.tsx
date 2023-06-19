@@ -1,67 +1,53 @@
 import {Banner, BannerType} from './Banner.js'
 import {Link} from './Link.js'
 import {List} from './List.js'
-import {BoldToken, InlineToken, LinkToken, TokenItem, TokenizedText} from './TokenizedText.js'
+import {TokenItem, TokenizedText} from './TokenizedText.js'
 import {Box, Text} from 'ink'
-import React, {FunctionComponent} from 'react'
-
-export interface CustomSection {
-  title?: string
-  body: TokenItem
-}
+import React from 'react'
 
 export interface AlertProps {
   type: Exclude<BannerType, 'error' | 'external_error'>
-  headline?: TokenItem<Exclude<InlineToken, LinkToken | BoldToken>>
+  headline: string
   body?: TokenItem
-  nextSteps?: TokenItem<InlineToken>[]
-  reference?: TokenItem<InlineToken>[]
+  nextSteps?: TokenItem[]
+  reference?: TokenItem[]
   link?: {
     label: string
     url: string
   }
   orderedNextSteps?: boolean
-  customSections?: CustomSection[]
 }
 
-const Alert: FunctionComponent<AlertProps> = ({
-  type,
-  headline,
-  body,
-  nextSteps,
-  reference,
-  link,
-  customSections,
-  orderedNextSteps = false,
-}) => {
+const Alert: React.FC<AlertProps> = ({type, headline, body, nextSteps, reference, link, orderedNextSteps = false}) => {
   return (
-    <Banner type={type}>
-      {headline ? (
-        <Text bold>
-          <TokenizedText item={headline} />
-        </Text>
-      ) : null}
+    <Banner type={type} marginY={1}>
+      <Box>
+        <Text>{headline}</Text>
+      </Box>
 
-      {body ? <TokenizedText item={body} /> : null}
-
-      {nextSteps && nextSteps.length > 0 ? (
-        <List title="Next steps" items={nextSteps} ordered={orderedNextSteps} />
-      ) : null}
-
-      {reference && reference.length > 0 ? <List title="Reference" items={reference} /> : null}
-
-      {link ? <Link url={link.url} label={link.label} /> : null}
-
-      {customSections && customSections.length > 0 ? (
-        <Box flexDirection="column" gap={1}>
-          {customSections.map((section, index) => (
-            <Box key={index} flexDirection="column">
-              {section.title ? <Text bold>{section.title}</Text> : null}
-              <TokenizedText item={section.body} />
-            </Box>
-          ))}
+      {body && (
+        <Box marginTop={1}>
+          <TokenizedText item={body} />
         </Box>
-      ) : null}
+      )}
+
+      {nextSteps && (
+        <Box marginTop={1}>
+          <List title="Next steps" items={nextSteps} ordered={orderedNextSteps} />
+        </Box>
+      )}
+
+      {reference && (
+        <Box marginTop={1}>
+          <List title="Reference" items={reference} />
+        </Box>
+      )}
+
+      {link && (
+        <Box marginTop={1}>
+          <Link url={link.url} label={link.label} />
+        </Box>
+      )}
     </Banner>
   )
 }

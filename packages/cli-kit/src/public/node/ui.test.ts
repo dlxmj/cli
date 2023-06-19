@@ -1,29 +1,22 @@
-import {renderConcurrent, renderFatalError, renderInfo, renderSuccess, renderTasks, renderWarning} from './ui.js'
-import {AbortSignal} from './abort.js'
-import {BugError, FatalError, AbortError} from './error.js'
-import {mockAndCaptureOutput} from './testing/output.js'
-import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
-import supportsHyperlinks from 'supports-hyperlinks'
-import {Writable} from 'stream'
-
-vi.mock('supports-hyperlinks')
-
-beforeEach(() => {
-  vi.mocked(supportsHyperlinks).stdout = false
-})
+import {renderFatalError, renderInfo, renderSuccess, renderWarning} from './ui.js'
+import {Abort, Bug} from '../../error.js'
+import * as outputMocker from '../../testing/output.js'
+import {run} from '../../testing/ui.js'
+import {afterEach, describe, expect, test} from 'vitest'
+import stripAnsi from 'strip-ansi'
 
 afterEach(() => {
-  mockAndCaptureOutput().clear()
+  outputMocker.mockAndCaptureOutput().clear()
 })
 
 describe('renderInfo', async () => {
   test('renders info inside a banner', async () => {
     // Given
-    const mockOutput = mockAndCaptureOutput()
+    const mockOutput = outputMocker.mockAndCaptureOutput()
 
     // When
     renderInfo({
-      headline: 'Title.',
+      headline: 'Title',
       body: 'Body',
       nextSteps: [
         [
@@ -67,31 +60,14 @@ describe('renderInfo', async () => {
         label: 'Link',
         url: 'https://shopify.com',
       },
-      customSections: [
-        {
-          title: 'Custom section',
-          body: {
-            list: {
-              items: ['Item 1', 'Item 2', 'Item 3'],
-            },
-          },
-        },
-        {
-          title: 'Custom section 2',
-          body: {
-            list: {
-              items: ['Item 1', 'Item 2', 'Item 3'],
-            },
-          },
-        },
-      ],
     })
 
     // Then
     expect(mockOutput.info()).toMatchInlineSnapshot(`
-      "╭─ info ───────────────────────────────────────────────────────────────────────╮
+      "
+      ╭─ info ───────────────────────────────────────────────────────────────────────╮
       │                                                                              │
-      │  Title.                                                                      │
+      │  Title                                                                       │
       │                                                                              │
       │  Body                                                                        │
       │                                                                              │
@@ -102,23 +78,12 @@ describe('renderInfo', async () => {
       │                                                                              │
       │  Reference                                                                   │
       │    • Run \`npm shopify help\`                                                  │
-      │    • Press 'return' to open the really amazing and clean dev docs [1]        │
+      │    • Press 'return' to open the really amazing and clean dev docs:           │
+      │      https://shopify.dev                                                     │
       │                                                                              │
-      │  Link [2]                                                                    │
-      │                                                                              │
-      │  Custom section                                                              │
-      │    • Item 1                                                                  │
-      │    • Item 2                                                                  │
-      │    • Item 3                                                                  │
-      │                                                                              │
-      │  Custom section 2                                                            │
-      │    • Item 1                                                                  │
-      │    • Item 2                                                                  │
-      │    • Item 3                                                                  │
+      │  Link: https://shopify.com                                                   │
       │                                                                              │
       ╰──────────────────────────────────────────────────────────────────────────────╯
-      [1] https://shopify.dev
-      [2] https://shopify.com
       "
     `)
   })
@@ -127,18 +92,19 @@ describe('renderInfo', async () => {
 describe('renderSuccess', async () => {
   test('renders a success message inside a banner', async () => {
     // Given
-    const mockOutput = mockAndCaptureOutput()
+    const mockOutput = outputMocker.mockAndCaptureOutput()
 
     // When
     renderSuccess({
-      headline: 'Title.',
+      headline: 'Title',
     })
 
     // Then
     expect(mockOutput.info()).toMatchInlineSnapshot(`
-      "╭─ success ────────────────────────────────────────────────────────────────────╮
+      "
+      ╭─ success ────────────────────────────────────────────────────────────────────╮
       │                                                                              │
-      │  Title.                                                                      │
+      │  Title                                                                       │
       │                                                                              │
       ╰──────────────────────────────────────────────────────────────────────────────╯
       "
@@ -149,11 +115,11 @@ describe('renderSuccess', async () => {
 describe('renderWarning', async () => {
   test('renders a warning inside a banner with good wrapping', async () => {
     // Given
-    const mockOutput = mockAndCaptureOutput()
+    const mockOutput = outputMocker.mockAndCaptureOutput()
 
     // When
     renderWarning({
-      headline: 'Title.',
+      headline: 'Title',
       reference: [
         'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
         'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.',
@@ -164,22 +130,23 @@ describe('renderWarning', async () => {
 
     // Then
     expect(mockOutput.warn()).toMatchInlineSnapshot(`
-      "╭─ warning ────────────────────────────────────────────────────────────────────╮
+      "
+      ╭─ warning ────────────────────────────────────────────────────────────────────╮
       │                                                                              │
-      │  Title.                                                                      │
+      │  Title                                                                       │
       │                                                                              │
       │  Next steps                                                                  │
       │    1. First                                                                  │
       │    2. Second                                                                 │
       │                                                                              │
       │  Reference                                                                   │
-      │    • Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod │
-      │       tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim   │
-      │      veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea │
-      │       commodo consequat.                                                     │
+      │    • Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do         │
+      │      eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad  │
+      │       minim veniam, quis nostrud exercitation ullamco laboris nisi ut        │
+      │      aliquip ex ea commodo consequat.                                        │
       │    • Duis aute irure dolor in reprehenderit in voluptate velit esse cillum   │
       │      dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non  │
-      │      proident, sunt in culpa qui officia deserunt mollit anim id est         │
+      │       proident, sunt in culpa qui officia deserunt mollit anim id est        │
       │      laborum.                                                                │
       │                                                                              │
       ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -191,19 +158,17 @@ describe('renderWarning', async () => {
 describe('renderFatalError', async () => {
   test('renders a fatal error inside a banner', async () => {
     // Given
-    const mockOutput = mockAndCaptureOutput()
+    const mockOutput = outputMocker.mockAndCaptureOutput()
 
     // When
     renderFatalError(
-      new AbortError(
-        "Couldn't connect to the Shopify Partner Dashboard.",
-        'Check your internet connection and try again.',
-      ),
+      new Abort("Couldn't connect to the Shopify Partner Dashboard.", 'Check your internet connection and try again.'),
     )
 
     // Then
     expect(mockOutput.error()).toMatchInlineSnapshot(`
-      "╭─ error ──────────────────────────────────────────────────────────────────────╮
+      "
+      ╭─ error ──────────────────────────────────────────────────────────────────────╮
       │                                                                              │
       │  Couldn't connect to the Shopify Partner Dashboard.                          │
       │                                                                              │
@@ -216,10 +181,10 @@ describe('renderFatalError', async () => {
 
   test('renders a fatal error inside a banner with a stack trace', async () => {
     // Given
-    const mockOutput = mockAndCaptureOutput()
+    const mockOutput = outputMocker.mockAndCaptureOutput()
 
     // When
-    const error = new BugError('Unexpected error')
+    const error = new Bug('Unexpected error')
     error.stack = `
       Error: Unexpected error
           at Module._compile (internal/modules/cjs/loader.js:1137:30)
@@ -231,15 +196,16 @@ describe('renderFatalError', async () => {
 
     // Then
     expect(mockOutput.error()).toMatchInlineSnapshot(`
-      "╭─ error ──────────────────────────────────────────────────────────────────────╮
+      "
+      ╭─ error ──────────────────────────────────────────────────────────────────────╮
       │                                                                              │
       │  Unexpected error                                                            │
       │                                                                              │
       │  To investigate the issue, examine this stack trace:                         │
-      │    at _compile (internal/modules/cjs/loader.js:1137)                         │
-      │    at js (internal/modules/cjs/loader.js:1157)                               │
-      │    at load (internal/modules/cjs/loader.js:985)                              │
-      │    at _load (internal/modules/cjs/loader.js:878)                             │
+      │  at _compile (internal/modules/cjs/loader.js:1137)                           │
+      │  at js (internal/modules/cjs/loader.js:1157)                                 │
+      │  at load (internal/modules/cjs/loader.js:985)                                │
+      │  at _load (internal/modules/cjs/loader.js:878)                               │
       │                                                                              │
       ╰──────────────────────────────────────────────────────────────────────────────╯
       "
@@ -248,7 +214,7 @@ describe('renderFatalError', async () => {
 
   test('renders a fatal error inside a banner with some next steps', async () => {
     // Given
-    const mockOutput = mockAndCaptureOutput()
+    const mockOutput = outputMocker.mockAndCaptureOutput()
 
     const nextSteps = [
       [
@@ -273,89 +239,43 @@ describe('renderFatalError', async () => {
     ]
 
     // When
-    const error = new AbortError('No Organization found', undefined, nextSteps)
+    const error = new Abort('No Organization found', undefined, nextSteps)
     renderFatalError(error)
 
     // Then
     expect(mockOutput.error()).toMatchInlineSnapshot(`
-      "╭─ error ──────────────────────────────────────────────────────────────────────╮
+      "
+      ╭─ error ──────────────────────────────────────────────────────────────────────╮
       │                                                                              │
       │  No Organization found                                                       │
       │                                                                              │
       │  Next steps                                                                  │
-      │    • Have you created a Shopify Partners organization [1]?                   │
+      │    • Have you created a Shopify Partners organization:                       │
+      │      https://partners.shopify.com/signup?                                    │
       │    • Have you confirmed your accounts from the emails you received?          │
       │    • Need to connect to a different App or organization? Run the command     │
       │      again with \`--reset\`                                                    │
       │                                                                              │
       ╰──────────────────────────────────────────────────────────────────────────────╯
-      [1] https://partners.shopify.com/signup
       "
     `)
   })
 })
 
 describe('renderConcurrent', async () => {
-  test('renders an error message correctly when a process throws an error', async () => {
-    // Given
-    const mockOutput = mockAndCaptureOutput()
-
+  test.skip('renders a stream of concurrent outputs from sub-processes', async () => {
     // When
-    const throwingProcess = {
-      prefix: 'backend',
-      action: async (_stdout: Writable, _stderr: Writable, _signal: AbortSignal) => {
-        throw new Error('example error')
-      },
-    }
-
-    try {
-      await renderConcurrent({processes: [throwingProcess]})
-      // eslint-disable-next-line no-catch-all/no-catch-all
-    } catch (error) {
-      renderFatalError(error as FatalError)
-    }
+    const {stdout} = await run('render-concurrent')
+    const lastFrame = stripAnsi(stdout).replace(/\d/g, '0')
 
     // Then
-    expect(mockOutput.error()).toMatchInlineSnapshot(`
-      "╭─ error ──────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  example error                                                               │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
-      "
-    `)
-  })
-})
-
-describe('renderTasks', async () => {
-  test('renders an error message correctly when the task throws an error', async () => {
-    // Given
-    const mockOutput = mockAndCaptureOutput()
-
-    // When
-    const throwingTask = {
-      title: 'throwing task',
-      task: async () => {
-        throw new Error('example error')
-      },
-    }
-
-    try {
-      await renderTasks([throwingTask])
-      // eslint-disable-next-line no-catch-all/no-catch-all
-    } catch (error: any) {
-      renderWarning({
-        headline: error.message,
-      })
-    }
-
-    // Then
-    expect(mockOutput.warn()).toMatchInlineSnapshot(`
-      "╭─ warning ────────────────────────────────────────────────────────────────────╮
-      │                                                                              │
-      │  example error                                                               │
-      │                                                                              │
-      ╰──────────────────────────────────────────────────────────────────────────────╯
+    expect(lastFrame).toMatchInlineSnapshot(`
+      "0000-00-00 00:00:00 | backend  | first backend message
+      0000-00-00 00:00:00 | backend  | second backend message
+      0000-00-00 00:00:00 | backend  | third backend message
+      0000-00-00 00:00:00 | frontend | first frontend message
+      0000-00-00 00:00:00 | frontend | second frontend message
+      0000-00-00 00:00:00 | frontend | third frontend message
       "
     `)
   })

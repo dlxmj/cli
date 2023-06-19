@@ -1,9 +1,7 @@
 import {Alert, AlertProps} from './components/Alert.js'
 import {renderOnce} from '../ui.js'
-import {consoleLog, consoleWarn, Logger, LogLevel} from '../../../public/node/output.js'
-import {recordUIEvent} from '../demo-recorder.js'
+import {consoleLog, consoleWarn, Logger, LogLevel} from '../../../output.js'
 import React from 'react'
-import {RenderOptions} from 'ink'
 
 const typeToLogLevel: {[key in AlertProps['type']]: LogLevel} = {
   info: 'info',
@@ -17,26 +15,8 @@ const typeToLogger: {[key in AlertProps['type']]: Logger} = {
   success: consoleLog,
 }
 
-export interface AlertOptions extends AlertProps {
-  renderOptions?: RenderOptions
-}
-
-export function alert({
-  type,
-  headline,
-  body,
-  nextSteps,
-  reference,
-  link,
-  customSections,
-  orderedNextSteps = false,
-  renderOptions,
-}: AlertOptions) {
-  // eslint-disable-next-line prefer-rest-params
-  const {type: alertType, ...eventProps} = arguments[0]
-  recordUIEvent({type, properties: eventProps})
-
-  return renderOnce(
+export function alert({type, headline, body, nextSteps, reference, link, orderedNextSteps = false}: AlertProps) {
+  renderOnce(
     <Alert
       type={type}
       headline={headline}
@@ -45,8 +25,8 @@ export function alert({
       reference={reference}
       link={link}
       orderedNextSteps={orderedNextSteps}
-      customSections={customSections}
     />,
-    {logLevel: typeToLogLevel[type], logger: typeToLogger[type], renderOptions},
+    typeToLogLevel[type],
+    typeToLogger[type],
   )
 }

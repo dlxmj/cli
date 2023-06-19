@@ -1,12 +1,12 @@
 import ThemeCommand from '../../utilities/theme-command.js'
 import {execCLI2} from '@shopify/cli-kit/node/ruby'
-import {globalFlags} from '@shopify/cli-kit/node/cli'
+import {cli} from '@shopify/cli-kit'
 
 export default class LanguageServer extends ThemeCommand {
   static description = 'Start a Language Server Protocol server.'
 
   static flags = {
-    ...globalFlags,
+    ...cli.globalFlags,
   }
 
   async run(): Promise<void> {

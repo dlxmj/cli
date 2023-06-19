@@ -1,26 +1,11 @@
 import {selectStore} from './select-store.js'
-import {fetchAllDevStores} from './fetch.js'
+import {fetchAllDevStores, fetchStoreByDomain} from './fetch.js'
 import {Organization, OrganizationStore} from '../../models/organization.js'
 import {reloadStoreListPrompt, selectStorePrompt} from '../../prompts/dev.js'
-import {beforeEach, describe, expect, vi, test} from 'vitest'
-import {partnersRequest} from '@shopify/cli-kit/node/api/partners'
-import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
-import {isSpinEnvironment} from '@shopify/cli-kit/node/context/spin'
-import {firstPartyDev} from '@shopify/cli-kit/node/context/local'
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {api, environment} from '@shopify/cli-kit'
 
-vi.mock('../../prompts/dev')
-vi.mock('./fetch')
-vi.mock('@shopify/cli-kit/node/context/local')
-vi.mock('@shopify/cli-kit/node/system')
-vi.mock('@shopify/cli-kit/node/api/partners')
-vi.mock('@shopify/cli-kit/node/session')
-vi.mock('@shopify/cli-kit/node/context/spin')
-
-const ORG1: Organization = {
-  id: '1',
-  businessName: 'org1',
-  betas: {},
-}
+const ORG1: Organization = {id: '1', businessName: 'org1', appsNext: true}
 const STORE1: OrganizationStore = {
   shopId: '1',
   link: 'link1',
@@ -49,12 +34,58 @@ const STORE3: OrganizationStore = {
 }
 
 beforeEach(() => {
-  vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')
-  vi.mocked(isSpinEnvironment).mockReturnValue(false)
+  vi.mock('../../prompts/dev')
+  vi.mock('./fetch')
+  vi.mock('@shopify/cli-kit', async () => {
+    const cliKit: any = await vi.importActual('@shopify/cli-kit')
+    return {
+      ...cliKit,
+      session: {
+        ensureAuthenticatedPartners: async () => 'token',
+      },
+      http: {
+        fetch: vi.fn(),
+      },
+      api: {
+        partners: {
+          request: vi.fn(),
+        },
+        graphql: cliKit.api.graphql,
+      },
+      system: {
+        sleep: vi.fn(),
+      },
+      environment: {
+        service: {
+          isSpinEnvironment: vi.fn(),
+        },
+        local: {
+          firstPartyDev: vi.fn(),
+          isUnitTest: vi.fn(() => true),
+        },
+        fqdn: {
+          partners: vi.fn(),
+        },
+      },
+    }
+  })
 })
 
 describe('selectStore', async () => {
-  test('prompts user to select', async () => {
+  it('returns store if cachedStoreName and is valid', async () => {
+    // Given
+    const fqdn = STORE1.shopDomain
+    vi.mocked(fetchStoreByDomain).mockResolvedValueOnce({organization: ORG1, store: STORE1})
+
+    // When
+    const got = await selectStore([STORE1, STORE2], ORG1, 'token', fqdn)
+
+    // Then
+    expect(got).toEqual(STORE1)
+    expect(selectStorePrompt).not.toHaveBeenCalled()
+  })
+
+  it('prompts user to select if there is no cachedApiKey', async () => {
     // Given
     vi.mocked(selectStorePrompt).mockResolvedValueOnce(STORE1)
 
@@ -66,10 +97,23 @@ describe('selectStore', async () => {
     expect(selectStorePrompt).toHaveBeenCalledWith([STORE1, STORE2])
   })
 
-  test('prompts user to convert store to non-transferable if selection is invalid', async () => {
+  it('prompts to select a new store if cached store fqdn is invalid', async () => {
+    // Given
+    const fqdn = 'invalid-store-domain'
+    vi.mocked(selectStorePrompt).mockResolvedValueOnce(STORE1)
+    vi.mocked(fetchStoreByDomain).mockResolvedValueOnce({organization: ORG1, store: undefined})
+
+    // When
+    const got = await selectStore([STORE1, STORE2], ORG1, 'token', fqdn)
+
+    // Then
+    expect(got).toEqual(STORE1)
+  })
+
+  it('prompts user to convert store to non-transferable if selection is invalid', async () => {
     // Given
     vi.mocked(selectStorePrompt).mockResolvedValueOnce(STORE2)
-    vi.mocked(partnersRequest).mockResolvedValueOnce({convertDevToTestStore: {convertedToTestStore: true}})
+    vi.mocked(api.partners.request).mockResolvedValueOnce({convertDevToTestStore: {convertedToTestStore: true}})
 
     // When
     const got = await selectStore([STORE1, STORE2], ORG1, 'token')
@@ -79,18 +123,18 @@ describe('selectStore', async () => {
     expect(selectStorePrompt).toHaveBeenCalledWith([STORE1, STORE2])
   })
 
-  test('not prompts user to convert store to non-transferable if selection is invalid inside spin instance and first party', async () => {
+  it('not prompts user to convert store to non-transferable if selection is invalid inside spin instance and first party', async () => {
     // Given
     vi.mocked(selectStorePrompt).mockResolvedValueOnce(STORE2)
-    vi.mocked(isSpinEnvironment).mockReturnValue(true)
-    vi.mocked(firstPartyDev).mockReturnValue(true)
+    vi.mocked(environment.service.isSpinEnvironment).mockReturnValue(true)
+    vi.mocked(environment.local.firstPartyDev).mockReturnValue(true)
 
     // When
     const got = await selectStore([STORE1, STORE2], ORG1, 'token')
 
     // Then
     expect(got).toEqual(STORE2)
-    expect(partnersRequest).not.toHaveBeenCalledWith({
+    expect(api.partners.request).not.toHaveBeenCalledWith({
       input: {
         organizationID: parseInt(ORG1.id, 10),
         shopId: STORE2.shopId,
@@ -99,7 +143,7 @@ describe('selectStore', async () => {
     expect(selectStorePrompt).toHaveBeenCalledWith([STORE1, STORE2])
   })
 
-  test('throws if store is non convertible', async () => {
+  it('throws if store is non convertible', async () => {
     // Given
     vi.mocked(selectStorePrompt).mockResolvedValueOnce(STORE3)
 
@@ -110,7 +154,7 @@ describe('selectStore', async () => {
     await expect(got).rejects.toThrow('The store you specified (domain3) is not a dev store')
   })
 
-  test('prompts user to create & reload if prompt returns undefined, throws if reload is false', async () => {
+  it('prompts user to create & reload if prompt returns undefined, throws if reload is false', async () => {
     // Given
     vi.mocked(selectStorePrompt).mockResolvedValue(undefined)
     vi.mocked(reloadStoreListPrompt).mockResolvedValue(false)
@@ -123,7 +167,7 @@ describe('selectStore', async () => {
     expect(selectStorePrompt).toHaveBeenCalledWith([STORE1, STORE2])
   })
 
-  test('prompts user to create & reload, fetches 10 times and tries again if reload is true', async () => {
+  it('prompts user to create & reload, fetches 10 times and tries again if reload is true', async () => {
     // Given
     vi.mocked(selectStorePrompt).mockResolvedValue(undefined)
     vi.mocked(reloadStoreListPrompt).mockResolvedValueOnce(true)

@@ -3,20 +3,18 @@ import {AppInterface} from '../../models/app/app.js'
 import {load as loadApp} from '../../models/app/loader.js'
 import build from '../../services/build.js'
 import Command from '../../utilities/app-command.js'
-import {loadExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
 import {Flags} from '@oclif/core'
-import {globalFlags} from '@shopify/cli-kit/node/cli'
-import {addPublicMetadata} from '@shopify/cli-kit/node/metadata'
+import {path, cli, metadata} from '@shopify/cli-kit'
 
 export default class Build extends Command {
-  static description = 'Build the app.'
+  static description = 'Build the app'
 
   static flags = {
-    ...globalFlags,
+    ...cli.globalFlags,
     ...appFlags,
     'skip-dependencies-installation': Flags.boolean({
       hidden: false,
-      description: 'Skips the installation of dependencies. Deprecated, use workspaces instead.',
+      description: 'Skips the installation of dependencies.',
       env: 'SHOPIFY_FLAG_SKIP_DEPENDENCIES_INSTALLATION',
       default: false,
     }),
@@ -30,12 +28,12 @@ export default class Build extends Command {
   async run(): Promise<void> {
     const {flags} = await this.parse(Build)
 
-    await addPublicMetadata(() => ({
+    await metadata.addPublic(() => ({
       cmd_app_dependency_installation_skipped: flags['skip-dependencies-installation'],
     }))
 
-    const specifications = await loadExtensionsSpecifications(this.config)
-    const app: AppInterface = await loadApp({specifications, directory: flags.path})
+    const directory = flags.path ? path.resolve(flags.path) : process.cwd()
+    const app: AppInterface = await loadApp(directory)
     await build({app, skipDependenciesInstallation: flags['skip-dependencies-installation'], apiKey: flags['api-key']})
   }
 }

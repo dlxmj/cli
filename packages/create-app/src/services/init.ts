@@ -1,23 +1,9 @@
 import {getDeepInstallNPMTasks, updateCLIDependencies} from '../utils/template/npm.js'
 import cleanup from '../utils/template/cleanup.js'
-import {
-  findUpAndReadPackageJson,
-  packageManager,
-  PackageManager,
-  packageManagerUsedForCreating,
-  writePackageJSON,
-} from '@shopify/cli-kit/node/node-package-manager'
-import {renderSuccess, renderTasks, Task} from '@shopify/cli-kit/node/ui'
-import {parseGitHubRepositoryReference} from '@shopify/cli-kit/node/github'
-import {hyphenate} from '@shopify/cli-kit/common/string'
-import {recursiveLiquidTemplateCopy} from '@shopify/cli-kit/node/liquid'
-import {isShopify} from '@shopify/cli-kit/node/context/local'
-import {downloadGitRepository, initializeGitRepository} from '@shopify/cli-kit/node/git'
-import {appendFile, fileExists, inTemporaryDirectory, mkdir, moveFile, writeFile} from '@shopify/cli-kit/node/fs'
-import {joinPath} from '@shopify/cli-kit/node/path'
-import {username} from '@shopify/cli-kit/node/os'
-import {AbortError} from '@shopify/cli-kit/node/error'
-import {formatPackageManagerCommand} from '@shopify/cli-kit/node/output'
+
+import {string, path, file, ui, template, npm, git, github, environment, error, output} from '@shopify/cli-kit'
+import {packageManager, PackageManager, packageManagerUsedForCreating} from '@shopify/cli-kit/node/node-package-manager'
+import {renderSuccess} from '@shopify/cli-kit/node/ui'
 
 interface InitOptions {
   name: string
@@ -29,123 +15,150 @@ interface InitOptions {
 
 async function init(options: InitOptions) {
   const packageManager: PackageManager = inferPackageManager(options.packageManager)
-  const hyphenizedName = hyphenate(options.name)
-  const outputDirectory = joinPath(options.directory, hyphenizedName)
-  const githubRepo = parseGitHubRepositoryReference(options.template)
+  const hyphenizedName = string.hyphenize(options.name)
+  const outputDirectory = path.join(options.directory, hyphenizedName)
+  const githubRepo = github.parseGithubRepoReference(options.template)
 
   await ensureAppDirectoryIsAvailable(outputDirectory, hyphenizedName)
 
-  await inTemporaryDirectory(async (tmpDir) => {
-    const templateDownloadDir = joinPath(tmpDir, 'download')
+  await file.inTemporaryDirectory(async (tmpDir) => {
+    const templateDownloadDir = path.join(tmpDir, 'download')
     const templatePathDir = githubRepo.filePath
-      ? joinPath(templateDownloadDir, githubRepo.filePath)
+      ? path.join(templateDownloadDir, githubRepo.filePath)
       : templateDownloadDir
-    const templateScaffoldDir = joinPath(tmpDir, 'app')
-    const repoUrl = githubRepo.branch ? `${githubRepo.baseURL}#${githubRepo.branch}` : githubRepo.baseURL
+    const templateScaffoldDir = path.join(tmpDir, 'app')
+    const repoUrl = githubRepo.branch ? `${githubRepo.repoBaseUrl}#${githubRepo.branch}` : githubRepo.repoBaseUrl
 
-    await mkdir(templateDownloadDir)
-    const tasks: Task<unknown>[] = [
+    await file.mkdir(templateDownloadDir)
+    let tasks: ui.ListrTasks = []
+
+    await ui.task({
+      title: `Downloading template from ${repoUrl}`,
+      task: async () => {
+        await git.downloadRepository({
+          repoUrl,
+          destination: templateDownloadDir,
+          shallow: true,
+        })
+        return {successMessage: `Downloaded template from ${repoUrl}`}
+      },
+    })
+
+    tasks = tasks.concat([
       {
-        title: `Downloading template from ${repoUrl}`,
-        task: async () => {
-          await downloadGitRepository({
-            repoUrl,
-            destination: templateDownloadDir,
-            shallow: true,
-          })
+        title: `Initialize your app ${hyphenizedName}`,
+        task: async (_, parentTask) => {
+          parentTask.title = `Initializing your app ${hyphenizedName}`
+          return parentTask.newListr([
+            {
+              title: 'Parse liquid',
+              task: async (_, task) => {
+                task.title = 'Parsing liquid'
+                await template.recursiveDirectoryCopy(templatePathDir, templateScaffoldDir, {
+                  dependency_manager: packageManager,
+                  app_name: options.name,
+                })
+
+                task.title = 'Liquid parsed'
+              },
+            },
+            {
+              title: 'Update package.json',
+              task: async (_, task) => {
+                task.title = 'Updating package.json'
+                const packageJSON = await npm.readPackageJSON(templateScaffoldDir)
+
+                await npm.updateAppData(packageJSON, hyphenizedName)
+                await updateCLIDependencies({packageJSON, local: options.local, directory: templateScaffoldDir})
+
+                await npm.writePackageJSON(templateScaffoldDir, packageJSON)
+
+                // Ensure that the installation of dependencies doesn't fail when using
+                // pnpm due to missing peerDependencies.
+                if (packageManager === 'pnpm') {
+                  await file.append(path.join(templateScaffoldDir, '.npmrc'), `auto-install-peers=true\n`)
+                }
+
+                task.title = 'Updated package.json'
+                parentTask.title = 'App initialized'
+              },
+            },
+          ])
         },
       },
-    ]
+    ])
 
-    tasks.push(
-      {
-        title: 'Parsing liquid',
-        task: async () => {
-          await recursiveLiquidTemplateCopy(templatePathDir, templateScaffoldDir, {
-            dependency_manager: packageManager,
-            app_name: options.name,
-          })
-        },
-      },
-      {
-        title: 'Updating package.json',
-        task: async () => {
-          const packageJSON = (await findUpAndReadPackageJson(templateScaffoldDir)).content
-          packageJSON.name = hyphenizedName
-          packageJSON.author = (await username()) ?? ''
-          packageJSON.private = true
-
-          switch (packageManager) {
-            case 'npm':
-            case 'yarn':
-              packageJSON.workspaces = ['web', 'web/frontend', 'extensions/*']
-              break
-            case 'pnpm':
-              await writeFile(
-                joinPath(templateScaffoldDir, 'pnpm-workspace.yaml'),
-                `packages:\n  - 'web'\n  - 'web/frontend'\n  - 'extensions/*'\n`,
-              )
-              // Ensure that the installation of dependencies doesn't fail when using
-              // pnpm due to missing peerDependencies.
-              await appendFile(joinPath(templateScaffoldDir, '.npmrc'), `auto-install-peers=true\n`)
-              break
-          }
-
-          await updateCLIDependencies({packageJSON, local: options.local, directory: templateScaffoldDir})
-          await writePackageJSON(templateScaffoldDir, packageJSON)
-        },
-      },
-    )
-
-    if (await isShopify()) {
+    if (await environment.local.isShopify()) {
       tasks.push({
-        title: "[Shopifolks-only] Configuring the project's NPM registry",
-        task: async () => {
-          const npmrcPath = joinPath(templateScaffoldDir, '.npmrc')
+        title: "[Shopifolks-only] Configure the project's NPM registry",
+        task: async (_, task) => {
+          task.title = "[Shopifolks-only] Configuring the project's NPM registry"
+          const npmrcPath = path.join(templateScaffoldDir, '.npmrc')
           const npmrcContent = `@shopify:registry=https://registry.npmjs.org\n`
-          await appendFile(npmrcPath, npmrcContent)
+          await file.append(npmrcPath, npmrcContent)
+          task.title = "[Shopifolks-only] Project's NPM registry configured."
         },
       })
     }
 
-    tasks.push(
+    tasks = tasks.concat([
       {
-        title: 'Installing dependencies',
-        task: async () => {
-          await getDeepInstallNPMTasks({from: templateScaffoldDir, packageManager})
+        title: `Install dependencies with ${packageManager}`,
+        task: async (_, parentTask) => {
+          parentTask.title = `Installing dependencies with ${packageManager}`
+          function didInstallEverything() {
+            parentTask.title = `Dependencies installed with ${packageManager}`
+          }
+
+          return parentTask.newListr(
+            await getDeepInstallNPMTasks({
+              from: templateScaffoldDir,
+              packageManager,
+              didInstallEverything,
+            }),
+            {concurrent: false},
+          )
         },
       },
       {
-        title: 'Cleaning up',
-        task: async () => {
+        title: 'Clean up',
+        task: async (_, task) => {
+          task.title = 'Cleaning up'
           await cleanup(templateScaffoldDir)
+          task.title = 'Completed clean up'
         },
       },
       {
         title: 'Initializing a Git repository...',
-        task: async () => {
-          await initializeGitRepository(templateScaffoldDir)
+        task: async (_, task) => {
+          await git.initializeRepository(templateScaffoldDir)
+          task.title = 'Git repository initialized'
         },
       },
-    )
+    ])
 
-    await renderTasks(tasks)
+    const list = ui.newListr(tasks, {
+      concurrent: false,
+      rendererOptions: {collapse: false},
+      rendererSilent: environment.local.isUnitTest(),
+    })
+    await list.run()
 
-    await moveFile(templateScaffoldDir, outputDirectory)
+    await file.move(templateScaffoldDir, outputDirectory)
   })
 
   renderSuccess({
-    headline: [{userInput: hyphenizedName}, 'is ready for you to build!'],
+    headline: `${hyphenizedName} is ready for you to build!`,
     nextSteps: [
       ['Run', {command: `cd ${hyphenizedName}`}],
-      ['For extensions, run', {command: formatPackageManagerCommand(packageManager, 'generate extension')}],
-      ['To see your app, run', {command: formatPackageManagerCommand(packageManager, 'dev')}],
+      ['For extensions, run', {command: output.formatPackageManagerCommand(packageManager, 'generate extension')}],
+      ['To see your app, run', {command: output.formatPackageManagerCommand(packageManager, 'dev')}],
     ],
     reference: [
       {link: {label: 'Shopify docs', url: 'https://shopify.dev'}},
       [
         'For an overview of commands, run',
-        {command: `${formatPackageManagerCommand(packageManager, 'shopify app', '--help')}`},
+        {command: `${output.formatPackageManagerCommand(packageManager, 'shopify app', '--help')}`},
       ],
     ],
   })
@@ -160,9 +173,9 @@ function inferPackageManager(optionsPackageManager: string | undefined): Package
 }
 
 async function ensureAppDirectoryIsAvailable(directory: string, name: string): Promise<void> {
-  const exists = await fileExists(directory)
+  const exists = await file.exists(directory)
   if (exists)
-    throw new AbortError(`\nA directory with this name (${name}) already exists.\nChoose a new name for your app.`)
+    throw new error.Abort(`\nA directory with this name (${name}) already exists.\nChoose a new name for your app.`)
 }
 
 export default init

@@ -1,11 +1,11 @@
+import {UIExtension, ThemeExtension, FunctionExtension, Extension} from './extensions.js'
 import {AppConfigurationSchema, Web, WebConfigurationSchema, App, AppInterface, WebType} from './app.js'
 import {configurationFileNames, dotEnvFileNames} from '../../constants.js'
 import metadata from '../../metadata.js'
-import {ExtensionInstance} from '../extensions/extension-instance.js'
+import {ExtensionInstance, specForType} from '../extensions/extensions.js'
 import {TypeSchema} from '../extensions/schemas.js'
-import {ExtensionSpecification} from '../extensions/specification.js'
-import {zod} from '@shopify/cli-kit/node/schema'
-import {fileExists, readFile, glob, findPathUp} from '@shopify/cli-kit/node/fs'
+import {FunctionInstance, functionSpecForType} from '../extensions/functions.js'
+import {error, file, path, schema, string, toml, output} from '@shopify/cli-kit'
 import {readAndParseDotEnv, DotEnvFile} from '@shopify/cli-kit/node/dot-env'
 import {
   getDependencies,
@@ -15,120 +15,17 @@ import {
 } from '@shopify/cli-kit/node/node-package-manager'
 import {resolveFramework} from '@shopify/cli-kit/node/framework'
 import {getArrayRejectingUndefined} from '@shopify/cli-kit/common/array'
-import {camelize} from '@shopify/cli-kit/common/string'
-import {hashString} from '@shopify/cli-kit/node/crypto'
-import {decodeToml} from '@shopify/cli-kit/node/toml'
-import {isShopify} from '@shopify/cli-kit/node/context/local'
-import {joinPath, dirname, basename} from '@shopify/cli-kit/node/path'
-import {AbortError} from '@shopify/cli-kit/node/error'
-import {outputContent, outputDebug, OutputMessage, outputToken} from '@shopify/cli-kit/node/output'
 
 const defaultExtensionDirectory = 'extensions/*'
 
 export type AppLoaderMode = 'strict' | 'report'
 
-type AbortOrReport = <T>(errorMessage: OutputMessage, fallback: T, configurationPath: string) => T
-
-async function loadConfigurationFile(
-  filepath: string,
-  abortOrReport: AbortOrReport,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  decode: (input: any) => any = decodeToml,
-): Promise<unknown> {
-  if (!(await fileExists(filepath))) {
-    return abortOrReport(
-      outputContent`Couldn't find the configuration file at ${outputToken.path(filepath)}`,
-      '',
-      filepath,
-    )
-  }
-  const configurationContent = await readFile(filepath)
-  let configuration: object
-  try {
-    configuration = decode(configurationContent)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (err: any) {
-    // TOML errors have line, pos and col properties
-    if (err.line && err.pos && err.col) {
-      return abortOrReport(
-        outputContent`Fix the following error in ${outputToken.path(filepath)}:\n${err.message}`,
-        null,
-        filepath,
-      )
-    } else {
-      throw err
-    }
-  }
-  // Convert snake_case keys to camelCase before returning
-  return {
-    ...Object.fromEntries(Object.entries(configuration).map((kv) => [camelize(kv[0]), kv[1]])),
-  }
-}
-
-export async function parseConfigurationFile<TSchema extends zod.ZodType>(
-  schema: TSchema,
-  filepath: string,
-  abortOrReport: AbortOrReport,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  decode: (input: any) => any = decodeToml,
-): Promise<zod.TypeOf<TSchema>> {
-  const fallbackOutput = {} as zod.TypeOf<TSchema>
-
-  const configurationObject = await loadConfigurationFile(filepath, abortOrReport, decode)
-  if (!configurationObject) return fallbackOutput
-
-  const parseResult = schema.safeParse(configurationObject)
-
-  if (!parseResult.success) {
-    const formattedError = JSON.stringify(parseResult.error.issues, null, 2)
-    return abortOrReport(
-      outputContent`Fix a schema error in ${outputToken.path(filepath)}:\n${formattedError}`,
-      fallbackOutput,
-      filepath,
-    )
-  }
-  return parseResult.data
-}
-
-export function findSpecificationForType(specifications: ExtensionSpecification[], type: string) {
-  return specifications.find(
-    (spec) =>
-      spec.identifier === type || spec.externalIdentifier === type || spec.additionalIdentifiers?.includes(type),
-  )
-}
-
-export async function findSpecificationForConfig(
-  specifications: ExtensionSpecification[],
-  configurationPath: string,
-  abortOrReport: AbortOrReport,
-) {
-  const fileContent = await readFile(configurationPath)
-  const obj = decodeToml(fileContent)
-  const {type} = TypeSchema.parse(obj)
-  const specification = findSpecificationForType(specifications, type)
-
-  if (!specification) {
-    const isShopifolk = await isShopify()
-    const shopifolkMessage = '\nYou might need to enable some beta flags on your Organization or App'
-    abortOrReport(
-      outputContent`Unknown extension type ${outputToken.yellow(type)} in ${outputToken.path(configurationPath)}. ${
-        isShopifolk ? shopifolkMessage : ''
-      }`,
-      undefined,
-      configurationPath,
-    )
-    return undefined
-  }
-
-  return specification
-}
-
 export class AppErrors {
   private errors: {
-    [key: string]: OutputMessage
+    [key: string]: output.Message
   } = {}
 
-  addError(path: string, message: OutputMessage): void {
+  addError(path: string, message: output.Message): void {
     this.errors[path] = message
   }
 
@@ -140,51 +37,30 @@ export class AppErrors {
     return Object.keys(this.errors).length === 0
   }
 
-  toJSON(): OutputMessage[] {
+  toJSON(): output.Message[] {
     return Object.values(this.errors)
   }
 }
 
-interface AppLoaderConstructorArgs {
-  directory: string
-  mode?: AppLoaderMode
-  specifications: ExtensionSpecification[]
-}
-
-/**
- * Load the local app from the given directory and using the provided extensions/functions specifications.
- * If the App contains extensions not supported by the current specs and mode is strict, it will throw an error.
- */
-export async function load(options: AppLoaderConstructorArgs): Promise<AppInterface> {
-  const loader = new AppLoader(options)
+export async function load(directory: string, mode: AppLoaderMode = 'strict'): Promise<AppInterface> {
+  const loader = new AppLoader({directory, mode})
   return loader.loaded()
 }
 
+interface AppLoaderConstructorArgs {
+  directory: string
+  mode: AppLoaderMode
+}
 class AppLoader {
   private directory: string
   private mode: AppLoaderMode
   private appDirectory = ''
   private configurationPath = ''
   private errors: AppErrors = new AppErrors()
-  private specifications: ExtensionSpecification[]
 
-  constructor({directory, mode, specifications}: AppLoaderConstructorArgs) {
-    this.mode = mode ?? 'strict'
+  constructor({directory, mode}: AppLoaderConstructorArgs) {
+    this.mode = mode
     this.directory = directory
-    this.specifications = specifications
-  }
-
-  findSpecificationForType(type: string) {
-    return findSpecificationForType(this.specifications, type)
-  }
-
-  parseConfigurationFile<TSchema extends zod.ZodType>(
-    schema: TSchema,
-    filepath: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    decode: (input: any) => any = decodeToml,
-  ) {
-    return parseConfigurationFile(schema, filepath, this.abortOrReport.bind(this), decode)
   }
 
   async loaded() {
@@ -192,14 +68,20 @@ class AppLoader {
     const configurationPath = await this.getConfigurationPath()
     const configuration = await this.parseConfigurationFile(AppConfigurationSchema, configurationPath)
     const dotenv = await this.loadDotEnv()
-
-    const {allExtensions, usedCustomLayout} = await this.loadExtensions(configuration.extensionDirectories)
-
-    const packageJSONPath = joinPath(this.appDirectory, 'package.json')
+    const {functions, usedCustomLayout: usedCustomLayoutForFunctionExtensions} = await this.loadFunctions(
+      configuration.extensionDirectories,
+    )
+    const {uiExtensions, usedCustomLayout: usedCustomLayoutForUIExtensions} = await this.loadUIExtensions(
+      configuration.extensionDirectories,
+    )
+    const {themeExtensions, usedCustomLayout: usedCustomLayoutForThemeExtensions} = await this.loadThemeExtensions(
+      configuration.extensionDirectories,
+    )
+    const packageJSONPath = path.join(this.appDirectory, 'package.json')
     const name = await loadAppName(this.appDirectory)
     const nodeDependencies = await getDependencies(packageJSONPath)
     const packageManager = await getPackageManager(this.appDirectory)
-    const {webs, usedCustomLayout: usedCustomLayoutForWeb} = await this.loadWebs(configuration.webDirectories)
+    const {webs, usedCustomLayout: usedCustomLayoutForWeb} = await this.loadWebs()
     const usesWorkspaces = await appUsesWorkspaces(this.appDirectory)
 
     const appClass = new App(
@@ -211,7 +93,9 @@ class AppLoader {
       configurationPath,
       nodeDependencies,
       webs,
-      allExtensions,
+      uiExtensions,
+      themeExtensions,
+      functions,
       usesWorkspaces,
       dotenv,
     )
@@ -220,7 +104,9 @@ class AppLoader {
 
     await logMetadataForLoadedApp(appClass, {
       usedCustomLayoutForWeb,
-      usedCustomLayoutForExtensions: usedCustomLayout,
+      usedCustomLayoutForUIExtensions,
+      usedCustomLayoutForFunctionExtensions,
+      usedCustomLayoutForThemeExtensions,
     })
 
     return appClass
@@ -228,30 +114,30 @@ class AppLoader {
 
   async loadDotEnv(): Promise<DotEnvFile | undefined> {
     let dotEnvFile: DotEnvFile | undefined
-    const dotEnvPath = joinPath(this.appDirectory, dotEnvFileNames.production)
-    if (await fileExists(dotEnvPath)) {
+    const dotEnvPath = path.join(this.appDirectory, dotEnvFileNames.production)
+    if (await file.exists(dotEnvPath)) {
       dotEnvFile = await readAndParseDotEnv(dotEnvPath)
     }
     return dotEnvFile
   }
 
   async findAppDirectory() {
-    if (!(await fileExists(this.directory))) {
-      throw new AbortError(outputContent`Couldn't find directory ${outputToken.path(this.directory)}`)
+    if (!(await file.exists(this.directory))) {
+      throw new error.Abort(output.content`Couldn't find directory ${output.token.path(this.directory)}`)
     }
-    return dirname(await this.getConfigurationPath())
+    return path.dirname(await this.getConfigurationPath())
   }
 
   async getConfigurationPath() {
     if (this.configurationPath) return this.configurationPath
 
-    const configurationPath = await findPathUp(configurationFileNames.app, {
+    const configurationPath = await path.findUp(configurationFileNames.app, {
       cwd: this.directory,
       type: 'file',
     })
     if (!configurationPath) {
-      throw new AbortError(
-        outputContent`Couldn't find the configuration file for ${outputToken.path(
+      throw new error.Abort(
+        output.content`Couldn't find the configuration file for ${output.token.path(
           this.directory,
         )}, are you in an app directory?`,
       )
@@ -261,106 +147,243 @@ class AppLoader {
     return configurationPath
   }
 
-  async loadWebs(webDirectories?: string[]): Promise<{webs: Web[]; usedCustomLayout: boolean}> {
-    const defaultWebDirectory = '**'
-    const webConfigGlobs = [...(webDirectories ?? [defaultWebDirectory])].map((webGlob) => {
-      return joinPath(this.appDirectory, webGlob, configurationFileNames.web)
-    })
-    const webTomlPaths = await glob(webConfigGlobs)
+  async loadWebs(): Promise<{webs: Web[]; usedCustomLayout: boolean}> {
+    const webTomlPaths = await path.glob(path.join(this.appDirectory, `**/${configurationFileNames.web}`))
 
     const webs = await Promise.all(webTomlPaths.map((path) => this.loadWeb(path)))
 
-    const webTomlsInStandardLocation = await glob(joinPath(this.appDirectory, `web/**/${configurationFileNames.web}`))
-    const usedCustomLayout = webDirectories !== undefined || webTomlsInStandardLocation.length !== webTomlPaths.length
+    const webTomlsInStandardLocation = await path.glob(
+      path.join(this.appDirectory, `web/**/${configurationFileNames.web}`),
+    )
+    const usedCustomLayout = webTomlsInStandardLocation.length !== webTomlPaths.length
 
     return {webs, usedCustomLayout}
   }
 
   async loadWeb(WebConfigurationFile: string): Promise<Web> {
     return {
-      directory: dirname(WebConfigurationFile),
+      directory: path.dirname(WebConfigurationFile),
       configuration: await this.parseConfigurationFile(WebConfigurationSchema, WebConfigurationFile),
-      framework: await resolveFramework(dirname(WebConfigurationFile)),
+      framework: await resolveFramework(path.dirname(WebConfigurationFile)),
     }
   }
 
-  async loadExtensions(
+  async loadConfigurationFile(
+    filepath: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    decode: (input: any) => any = toml.decode,
+  ): Promise<unknown> {
+    if (!(await file.exists(filepath))) {
+      return this.abortOrReport(
+        output.content`Couldn't find the configuration file at ${output.token.path(filepath)}`,
+        '',
+        filepath,
+      )
+    }
+    const configurationContent = await file.read(filepath)
+    let configuration: object
+    try {
+      configuration = decode(configurationContent)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
+      // TOML errors have line, pos and col properties
+      if (err.line && err.pos && err.col) {
+        return this.abortOrReport(
+          output.content`Fix the following error in ${output.token.path(filepath)}:\n${err.message}`,
+          null,
+          filepath,
+        )
+      } else {
+        throw err
+      }
+    }
+    // Convert snake_case keys to camelCase before returning
+    return {
+      ...Object.fromEntries(Object.entries(configuration).map((kv) => [string.camelize(kv[0]), kv[1]])),
+    }
+  }
+
+  async parseConfigurationFile<TSchema extends schema.define.ZodType>(
+    schema: TSchema,
+    filepath: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    decode: (input: any) => any = toml.decode,
+  ): Promise<schema.define.TypeOf<TSchema>> {
+    const fallbackOutput = {} as schema.define.TypeOf<TSchema>
+
+    const configurationObject = await this.loadConfigurationFile(filepath, decode)
+    if (!configurationObject) return fallbackOutput
+
+    const parseResult = schema.safeParse(configurationObject)
+
+    if (!parseResult.success) {
+      const formattedError = JSON.stringify(parseResult.error.issues, null, 2)
+      return this.abortOrReport(
+        output.content`Fix a schema error in ${output.token.path(filepath)}:\n${formattedError}`,
+        fallbackOutput,
+        filepath,
+      )
+    }
+    return parseResult.data
+  }
+
+  async loadUIExtensions(
     extensionDirectories?: string[],
-  ): Promise<{allExtensions: ExtensionInstance[]; usedCustomLayout: boolean}> {
+  ): Promise<{uiExtensions: UIExtension[]; usedCustomLayout: boolean}> {
     const extensionConfigPaths = [...(extensionDirectories ?? [defaultExtensionDirectory])].map((extensionPath) => {
-      return joinPath(this.appDirectory, extensionPath, '*.extension.toml')
+      return path.join(this.appDirectory, extensionPath, `${configurationFileNames.extension.ui}`)
     })
-    const configPaths = await glob(extensionConfigPaths)
+    const configPaths = await path.glob(extensionConfigPaths)
 
     const extensions = configPaths.map(async (configurationPath) => {
-      const directory = dirname(configurationPath)
-      const specification = await findSpecificationForConfig(
-        this.specifications,
-        configurationPath,
-        this.abortOrReport.bind(this),
-      )
+      const directory = path.dirname(configurationPath)
+      const fileContent = await file.read(configurationPath)
+      const obj = toml.decode(fileContent)
+      const {type} = TypeSchema.parse(obj)
+      const specification = await specForType(type)
 
-      if (!specification) return
+      if (!specification) {
+        this.abortOrReport(
+          output.content`Unknown extension type ${output.token.yellow(type)} in ${output.token.path(
+            configurationPath,
+          )}.`,
+          undefined,
+          configurationPath,
+        )
+        return undefined
+      }
 
       const configuration = await this.parseConfigurationFile(specification.schema, configurationPath)
-      const entryPath = await this.findEntryPath(directory, specification)
 
+      let entryPath
+      if (specification.singleEntryPath) {
+        entryPath = (
+          await Promise.all(
+            ['index']
+              .flatMap((name) => [`${name}.js`, `${name}.jsx`, `${name}.ts`, `${name}.tsx`])
+              .flatMap((fileName) => [`src/${fileName}`, `${fileName}`])
+              .map((relativePath) => path.join(directory, relativePath))
+              .map(async (sourcePath) => ((await file.exists(sourcePath)) ? sourcePath : undefined)),
+          )
+        ).find((sourcePath) => sourcePath !== undefined)
+        if (!entryPath) {
+          this.abortOrReport(
+            output.content`Couldn't find an index.{js,jsx,ts,tsx} file in the directories ${output.token.path(
+              directory,
+            )} or ${output.token.path(path.join(directory, 'src'))}`,
+            undefined,
+            directory,
+          )
+        }
+      }
+
+      // PENDING: load extensionPointSpecs depending on the points defined in the configuartion file and pass it to the constructor
       const extensionInstance = new ExtensionInstance({
         configuration,
         configurationPath,
-        entryPath,
+        entryPath: entryPath ?? '',
         directory,
         specification,
+        remoteSpecification: undefined,
+        extensionPointSpecs: undefined,
       })
 
-      const validateResult = await extensionInstance.validate()
-      if (validateResult.isErr()) {
-        this.abortOrReport(outputContent`\n${validateResult.error}`, undefined, configurationPath)
+      if (configuration.type) {
+        const validateResult = await extensionInstance.validate()
+        if (validateResult.isErr()) {
+          this.abortOrReport(output.content`\n${validateResult.error}`, undefined, configurationPath)
+        }
       }
-
       return extensionInstance
     })
 
-    const allExtensions = getArrayRejectingUndefined(await Promise.all(extensions))
-    return {allExtensions, usedCustomLayout: extensionDirectories !== undefined}
+    const uiExtensions = getArrayRejectingUndefined(await Promise.all(extensions))
+    return {uiExtensions, usedCustomLayout: extensionDirectories !== undefined}
   }
 
-  async findEntryPath(directory: string, specification: ExtensionSpecification) {
-    let entryPath
-    if (specification.singleEntryPath) {
-      entryPath = (
-        await Promise.all(
-          ['index']
-            .flatMap((name) => [`${name}.js`, `${name}.jsx`, `${name}.ts`, `${name}.tsx`])
-            .flatMap((fileName) => [`src/${fileName}`, `${fileName}`])
-            .map((relativePath) => joinPath(directory, relativePath))
-            .map(async (sourcePath) => ((await fileExists(sourcePath)) ? sourcePath : undefined)),
-        )
-      ).find((sourcePath) => sourcePath !== undefined)
-      if (!entryPath) {
+  async loadFunctions(
+    extensionDirectories?: string[],
+  ): Promise<{functions: FunctionExtension[]; usedCustomLayout: boolean}> {
+    const functionConfigPaths = [...(extensionDirectories ?? [defaultExtensionDirectory])].map((extensionPath) => {
+      return path.join(this.appDirectory, extensionPath, `${configurationFileNames.extension.function}`)
+    })
+    const configPaths = await path.glob(functionConfigPaths)
+
+    const allFunctions = configPaths.map(async (configurationPath) => {
+      const directory = path.dirname(configurationPath)
+      const fileContent = await file.read(configurationPath)
+      const obj = toml.decode(fileContent)
+      const {type} = TypeSchema.parse(obj)
+      const specification = await functionSpecForType(type)
+      if (!specification) {
         this.abortOrReport(
-          outputContent`Couldn't find an index.{js,jsx,ts,tsx} file in the directories ${outputToken.path(
-            directory,
-          )} or ${outputToken.path(joinPath(directory, 'src'))}`,
+          output.content`Unknown function type ${output.token.yellow(type)} in ${output.token.path(configurationPath)}`,
           undefined,
-          directory,
+          configurationPath,
         )
+        return undefined
       }
-    } else if (specification.identifier === 'function') {
-      entryPath = (
-        await Promise.all(
-          ['src/index.js', 'src/index.ts', 'src/main.rs']
-            .map((relativePath) => joinPath(directory, relativePath))
-            .map(async (sourcePath) => ((await fileExists(sourcePath)) ? sourcePath : undefined)),
-        )
-      ).find((sourcePath) => sourcePath !== undefined)
-    }
-    return entryPath
+
+      const configuration = await this.parseConfigurationFile(specification.configSchema, configurationPath)
+      const metadata = await this.parseConfigurationFile(
+        specification.metadataSchema,
+        path.join(directory, 'metadata.json'),
+        JSON.parse,
+      )
+
+      return new FunctionInstance({configuration, configurationPath, metadata, specification, directory})
+    })
+    const functions = getArrayRejectingUndefined(await Promise.all(allFunctions))
+    return {functions, usedCustomLayout: extensionDirectories !== undefined}
   }
 
-  abortOrReport<T>(errorMessage: OutputMessage, fallback: T, configurationPath: string): T {
+  async loadThemeExtensions(
+    extensionDirectories?: string[],
+  ): Promise<{themeExtensions: ThemeExtension[]; usedCustomLayout: boolean}> {
+    const themeConfigPaths = [...(extensionDirectories ?? [defaultExtensionDirectory])].map((extensionPath) => {
+      return path.join(this.appDirectory, extensionPath, `${configurationFileNames.extension.theme}`)
+    })
+    const configPaths = await path.glob(themeConfigPaths)
+
+    const extensions = configPaths.map(async (configurationPath) => {
+      const directory = path.dirname(configurationPath)
+      const fileContent = await file.read(configurationPath)
+      const obj = toml.decode(fileContent)
+      const {type} = TypeSchema.parse(obj)
+      const specification = await specForType(type)
+
+      if (!specification) {
+        this.abortOrReport(
+          output.content`Unknown extension type ${output.token.yellow(type)} in ${output.token.path(
+            configurationPath,
+          )}`,
+          undefined,
+          configurationPath,
+        )
+        return undefined
+      }
+
+      const configuration = await this.parseConfigurationFile(specification.schema, configurationPath)
+
+      return new ExtensionInstance({
+        configuration,
+        configurationPath,
+        entryPath: '',
+        directory,
+        specification,
+        remoteSpecification: undefined,
+        extensionPointSpecs: undefined,
+      })
+    })
+
+    const themeExtensions = getArrayRejectingUndefined(await Promise.all(extensions))
+
+    return {themeExtensions, usedCustomLayout: extensionDirectories !== undefined}
+  }
+
+  abortOrReport<T>(errorMessage: output.Message, fallback: T, configurationPath: string): T {
     if (this.mode === 'strict') {
-      throw new AbortError(errorMessage)
+      throw new error.Abort(errorMessage)
     } else {
       this.errors.addError(configurationPath, errorMessage)
       return fallback
@@ -369,33 +392,33 @@ class AppLoader {
 }
 
 export async function loadAppName(appDirectory: string): Promise<string> {
-  const packageJSONPath = joinPath(appDirectory, 'package.json')
-  return (await getPackageName(packageJSONPath)) ?? basename(appDirectory)
+  const packageJSONPath = path.join(appDirectory, 'package.json')
+  return (await getPackageName(packageJSONPath)) ?? path.basename(appDirectory)
 }
 
 async function getProjectType(webs: Web[]): Promise<'node' | 'php' | 'ruby' | 'frontend' | undefined> {
   const backendWebs = webs.filter((web) => web.configuration.type === WebType.Backend)
   const frontendWebs = webs.filter((web) => web.configuration.type === WebType.Frontend)
   if (backendWebs.length > 1) {
-    outputDebug('Unable to decide project type as multiple web backends')
+    output.debug('Unable to decide project type as multiple web backends')
     return
   } else if (backendWebs.length === 0 && frontendWebs.length > 0) {
     return 'frontend'
   } else if (backendWebs.length === 0) {
-    outputDebug('Unable to decide project type as no web backend')
+    output.debug('Unable to decide project type as no web backend')
     return
   }
   const {directory} = backendWebs[0]!
 
-  const nodeConfigFile = joinPath(directory, 'package.json')
-  const rubyConfigFile = joinPath(directory, 'Gemfile')
-  const phpConfigFile = joinPath(directory, 'composer.json')
+  const nodeConfigFile = path.join(directory, 'package.json')
+  const rubyConfigFile = path.join(directory, 'Gemfile')
+  const phpConfigFile = path.join(directory, 'composer.json')
 
-  if (await fileExists(nodeConfigFile)) {
+  if (await file.exists(nodeConfigFile)) {
     return 'node'
-  } else if (await fileExists(rubyConfigFile)) {
+  } else if (await file.exists(rubyConfigFile)) {
     return 'ruby'
-  } else if (await fileExists(phpConfigFile)) {
+  } else if (await file.exists(phpConfigFile)) {
     return 'php'
   }
   return undefined
@@ -405,17 +428,19 @@ async function logMetadataForLoadedApp(
   app: App,
   loadingStrategy: {
     usedCustomLayoutForWeb: boolean
-    usedCustomLayoutForExtensions: boolean
+    usedCustomLayoutForUIExtensions: boolean
+    usedCustomLayoutForFunctionExtensions: boolean
+    usedCustomLayoutForThemeExtensions: boolean
   },
 ) {
-  await metadata.addPublicMetadata(async () => {
+  await metadata.addPublic(async () => {
     const projectType = await getProjectType(app.webs)
 
-    const extensionFunctionCount = app.allExtensions.filter((extension) => extension.isFunctionExtension).length
-    const extensionUICount = app.allExtensions.filter((extension) => extension.isESBuildExtension).length
-    const extensionThemeCount = app.allExtensions.filter((extension) => extension.isThemeExtension).length
+    const extensionFunctionCount = app.extensions.function.length
+    const extensionUICount = app.extensions.ui.length
+    const extensionThemeCount = app.extensions.theme.length
 
-    const extensionTotalCount = app.allExtensions.length
+    const extensionTotalCount = extensionFunctionCount + extensionUICount + extensionThemeCount
 
     const webBackendCount = app.webs.filter((web) => web.configuration.type === WebType.Backend).length
     const webBackendFramework =
@@ -424,8 +449,9 @@ async function logMetadataForLoadedApp(
         : undefined
     const webFrontendCount = app.webs.filter((web) => web.configuration.type === WebType.Frontend).length
 
+    const allExtensions: Extension[] = [...app.extensions.function, ...app.extensions.theme, ...app.extensions.ui]
     const extensionsBreakdownMapping: {[key: string]: number} = {}
-    for (const extension of app.allExtensions) {
+    for (const extension of allExtensions) {
       if (extensionsBreakdownMapping[extension.type] === undefined) {
         extensionsBreakdownMapping[extension.type] = 1
       } else {
@@ -438,15 +464,21 @@ async function logMetadataForLoadedApp(
       app_extensions_any: extensionTotalCount > 0,
       app_extensions_breakdown: JSON.stringify(extensionsBreakdownMapping),
       app_extensions_count: extensionTotalCount,
-      app_extensions_custom_layout: loadingStrategy.usedCustomLayoutForExtensions,
+      app_extensions_custom_layout:
+        loadingStrategy.usedCustomLayoutForFunctionExtensions ||
+        loadingStrategy.usedCustomLayoutForThemeExtensions ||
+        loadingStrategy.usedCustomLayoutForUIExtensions,
       app_extensions_function_any: extensionFunctionCount > 0,
       app_extensions_function_count: extensionFunctionCount,
+      app_extensions_function_custom_layout: loadingStrategy.usedCustomLayoutForFunctionExtensions,
       app_extensions_theme_any: extensionThemeCount > 0,
       app_extensions_theme_count: extensionThemeCount,
+      app_extensions_theme_custom_layout: loadingStrategy.usedCustomLayoutForThemeExtensions,
       app_extensions_ui_any: extensionUICount > 0,
       app_extensions_ui_count: extensionUICount,
-      app_name_hash: hashString(app.name),
-      app_path_hash: hashString(app.directory),
+      app_extensions_ui_custom_layout: loadingStrategy.usedCustomLayoutForUIExtensions,
+      app_name_hash: string.hashString(app.name),
+      app_path_hash: string.hashString(app.directory),
       app_scopes: JSON.stringify(
         app.configuration.scopes
           .split(',')
@@ -463,7 +495,7 @@ async function logMetadataForLoadedApp(
     }
   })
 
-  await metadata.addSensitiveMetadata(async () => {
+  await metadata.addSensitive(async () => {
     return {
       app_name: app.name,
     }

@@ -1,13 +1,13 @@
 import {AbortError, BugError} from './error.js'
-import {AbortController, AbortSignal} from './abort.js'
-import {exec} from './system.js'
-import {fileExists, readFile, writeFile, findPathUp, glob} from './fs.js'
-import {dirname, joinPath} from './path.js'
-import {outputToken, outputContent, outputDebug} from '../../public/node/output.js'
-import {Version} from '../../private/node/semver.js'
-import latestVersion from 'latest-version'
-import type {Writable} from 'stream'
-import type {ExecOptions} from './system.js'
+import {Version} from './semver.js'
+import {exec} from '../../system.js'
+import {exists as fileExists, read as readFile, write as writeFile} from '../../file.js'
+import {glob, dirname, join as pathJoin, findUp} from '../../path.js'
+import {latestNpmPackageVersion} from '../../version.js'
+import {content, token, debug} from '../../output.js'
+import {AbortController, AbortSignal} from 'abort-controller'
+import type {Writable} from 'node:stream'
+import type {ExecOptions} from '../../system.js'
 
 /** The name of the Yarn lock file */
 export const yarnLockfile = 'yarn.lock'
@@ -37,7 +37,7 @@ export type DependencyType = 'dev' | 'prod' | 'peer'
  * A union that represents the package managers available.
  */
 export const packageManager = ['yarn', 'npm', 'pnpm'] as const
-export type PackageManager = (typeof packageManager)[number]
+export type PackageManager = typeof packageManager[number]
 
 /**
  * Returns an abort error that's thrown when a directory that's expected to have
@@ -45,7 +45,7 @@ export type PackageManager = (typeof packageManager)[number]
  * @param directory - The path to the directory that should contain a package.json
  * @returns An abort error.
  */
-export const PackageJsonNotFoundError = (directory: string): AbortError => {
+export const PackageJsonNotFoundError = (directory: string) => {
   return new AbortError(`The directory ${directory} doesn't have a package.json.`)
 }
 
@@ -55,10 +55,8 @@ export const PackageJsonNotFoundError = (directory: string): AbortError => {
  * @param directory - The directory from which the traverse has been done
  * @returns An abort error.
  */
-export const FindUpAndReadPackageJsonNotFoundError = (directory: string): BugError => {
-  return new BugError(
-    outputContent`Couldn't find a a package.json traversing directories from ${outputToken.path(directory)}`,
-  )
+export const FindUpAndReadPackageJsonNotFoundError = (directory: string) => {
+  return new BugError(content`Couldn't find a a package.json traversing directories from ${token.path(directory)}`)
 }
 
 /**
@@ -79,18 +77,13 @@ export function packageManagerUsedForCreating(env = process.env): PackageManager
 
 /**
  * Returns the dependency manager used by an existing project.
- * @param fromDirectory - The starting directory
+ * @param directory - The root directory of the project.
  * @returns The dependency manager
  */
-export async function getPackageManager(fromDirectory: string): Promise<PackageManager> {
-  const packageJson = await findPathUp('package.json', {cwd: fromDirectory, type: 'file'})
-  if (!packageJson) {
-    throw FindUpAndReadPackageJsonNotFoundError(fromDirectory)
-  }
-  const directory = dirname(packageJson)
-  outputDebug(outputContent`Obtaining the dependency manager in directory ${outputToken.path(directory)}...`)
-  const yarnLockPath = joinPath(directory, yarnLockfile)
-  const pnpmLockPath = joinPath(directory, pnpmLockfile)
+export async function getPackageManager(directory: string): Promise<PackageManager> {
+  debug(content`Obtaining the dependency manager in directory ${token.path(directory)}...`)
+  const yarnLockPath = pathJoin(directory, yarnLockfile)
+  const pnpmLockPath = pathJoin(directory, pnpmLockfile)
   if (await fileExists(yarnLockPath)) {
     return 'yarn'
   } else if (await fileExists(pnpmLockPath)) {
@@ -122,11 +115,9 @@ interface InstallNPMDependenciesRecursivelyOptions {
  * provided by dependency managers.
  * @param options - Options to install dependencies recursively.
  */
-export async function installNPMDependenciesRecursively(
-  options: InstallNPMDependenciesRecursivelyOptions,
-): Promise<void> {
-  const packageJsons = await glob(joinPath(options.directory, '**/package.json'), {
-    ignore: [joinPath(options.directory, 'node_modules/**/package.json')],
+export async function installNPMDependenciesRecursively(options: InstallNPMDependenciesRecursivelyOptions) {
+  const packageJsons = await glob(pathJoin(options.directory, '**/package.json'), {
+    ignore: [pathJoin(options.directory, 'node_modules/**/package.json')],
     cwd: options.directory,
     onlyFiles: true,
     deep: options.deep,
@@ -154,14 +145,14 @@ export async function installNPMDependenciesRecursively(
 
 interface InstallNodeModulesOptions {
   directory: string
-  args?: string[]
+  args: string[]
   packageManager: PackageManager
   stdout?: Writable
   stderr?: Writable
   signal?: AbortSignal
 }
 
-export async function installNodeModules(options: InstallNodeModulesOptions): Promise<void> {
+export async function installNodeModules(options: InstallNodeModulesOptions) {
   const execOptions: ExecOptions = {
     cwd: options.directory,
     stdin: undefined,
@@ -206,9 +197,9 @@ export async function getDependencies(packageJsonPath: string): Promise<{[key: s
  * @returns A promise that resolves with true if the app uses workspaces, false otherwise.
  */
 export async function usesWorkspaces(appDirectory: string): Promise<boolean> {
-  const packageJsonPath = joinPath(appDirectory, 'package.json')
+  const packageJsonPath = pathJoin(appDirectory, 'package.json')
   const packageJsonContent = await readAndParsePackageJson(packageJsonPath)
-  const pnpmWorkspacePath = joinPath(appDirectory, pnpmWorkspaceFile)
+  const pnpmWorkspacePath = pathJoin(appDirectory, pnpmWorkspaceFile)
   return Boolean(packageJsonContent.workspaces) || fileExists(pnpmWorkspacePath)
 }
 
@@ -219,9 +210,9 @@ export async function usesWorkspaces(appDirectory: string): Promise<boolean> {
  * @returns A promise that resolves with a more recent version or undefined if there's no more recent version.
  */
 export async function checkForNewVersion(dependency: string, currentVersion: string): Promise<string | undefined> {
-  outputDebug(outputContent`Checking if there's a version of ${dependency} newer than ${currentVersion}`)
+  debug(content`Checking if there's a version of ${dependency} newer than ${currentVersion}`)
   try {
-    const lastVersion = await getLatestNPMPackageVersion(dependency)
+    const lastVersion = await latestNpmPackageVersion(dependency)
     if (lastVersion && new Version(currentVersion).compare(lastVersion) < 0) {
       return lastVersion
     } else {
@@ -243,19 +234,9 @@ export interface PackageJson {
   name?: string
 
   /**
-   * The author attribute of the package.json
-   */
-  author?: string
-
-  /**
    * The version attribute of the package.json
    */
   version?: string
-
-  /**
-   * The scripts attribute of the package.json
-   */
-  scripts?: {[key: string]: string}
 
   /**
    * The dependencies attribute of the package.json
@@ -266,11 +247,6 @@ export interface PackageJson {
    * The devDependencies attribute of the package.json
    */
   devDependencies?: {[key: string]: string}
-
-  /**
-   * The peerDependencies attribute of the package.json
-   */
-  peerDependencies?: {[key: string]: string}
 
   /**
    * The optional oclif settings attribute of the package.json
@@ -293,17 +269,6 @@ export interface PackageJson {
    * The overrides attribute of the package.json. Only useful when using npm o npmn as package managers
    */
   overrides?: {[key: string]: string}
-
-  /**
-   *  The prettier attribute of the package.json
-   */
-  prettier?: string
-
-  /**
-   * The private attribute of the package.json.
-   * https://docs.npmjs.com/cli/v9/configuring-npm/package-json#private
-   */
-  private?: boolean
 }
 
 /**
@@ -379,18 +344,19 @@ export interface DependencyVersion {
 export async function addNPMDependenciesIfNeeded(
   dependencies: DependencyVersion[],
   options: AddNPMDependenciesIfNeededOptions,
-): Promise<void> {
-  outputDebug(outputContent`Adding the following dependencies if needed:
-${outputToken.json(dependencies)}
+) {
+  debug(content`Adding the following dependencies if needed:
+${token.json(dependencies)}
 With options:
-${outputToken.json(options)}
+${token.json(options)}
   `)
-  const packageJsonPath = joinPath(options.directory, 'package.json')
+  const packageJsonPath = pathJoin(options.directory, 'package.json')
   if (!(await fileExists(packageJsonPath))) {
     throw PackageJsonNotFoundError(options.directory)
   }
   const existingDependencies = Object.keys(await getDependencies(packageJsonPath))
-  const dependenciesToAdd = dependencies.filter((dep) => {
+  let dependenciesToAdd = dependencies
+  dependenciesToAdd = dependencies.filter((dep) => {
     return !existingDependencies.includes(dep.name)
   })
   if (dependenciesToAdd.length === 0) {
@@ -402,32 +368,24 @@ ${outputToken.json(options)}
 export async function addNPMDependencies(
   dependencies: DependencyVersion[],
   options: AddNPMDependenciesIfNeededOptions,
-): Promise<void> {
-  const dependenciesWithVersion = dependencies.map((dep) => {
+) {
+  let args: string[]
+  const depedenciesWithVersion = dependencies.map((dep) => {
     return dep.version ? `${dep.name}@${dep.version}` : dep.name
   })
-  options.stdout?.write(`Installing ${[dependenciesWithVersion].join(' ')} with ${options.packageManager}`)
   switch (options.packageManager) {
     case 'npm':
-      // npm isn't too smart when resolving the dependency tree. For example, admin ui extensions include react as
-      // a peer dependency, but npm can't figure out the relationship and fails. Installing dependencies one by one
-      // makes the task easier and npm can then proceed.
-      for (const dep of dependenciesWithVersion) {
-        // eslint-disable-next-line no-await-in-loop
-        await installDependencies(options, argumentsToAddDependenciesWithNPM(dep, options.type))
-      }
+      args = argumentsToAddDependenciesWithNPM(depedenciesWithVersion, options.type)
       break
     case 'yarn':
-      await installDependencies(options, argumentsToAddDependenciesWithYarn(dependenciesWithVersion, options.type))
+      args = argumentsToAddDependenciesWithYarn(depedenciesWithVersion, options.type)
       break
     case 'pnpm':
-      await installDependencies(options, argumentsToAddDependenciesWithPNPM(dependenciesWithVersion, options.type))
+      args = argumentsToAddDependenciesWithPNPM(depedenciesWithVersion, options.type)
       break
   }
-}
-
-async function installDependencies(options: AddNPMDependenciesIfNeededOptions, args: string[]) {
-  return exec(options.packageManager, args, {
+  options.stdout?.write(`Executing... ${[options.packageManager, ...args].join(' ')}`)
+  await exec(options.packageManager, args, {
     cwd: options.directory,
     stdout: options.stdout,
     stderr: options.stderr,
@@ -438,7 +396,7 @@ async function installDependencies(options: AddNPMDependenciesIfNeededOptions, a
 export async function addNPMDependenciesWithoutVersionIfNeeded(
   dependencies: string[],
   options: AddNPMDependenciesIfNeededOptions,
-): Promise<void> {
+) {
   await addNPMDependenciesIfNeeded(
     dependencies.map((dependency) => {
       return {name: dependency, version: undefined}
@@ -453,9 +411,9 @@ export async function addNPMDependenciesWithoutVersionIfNeeded(
  * @param type - The dependency type.
  * @returns An array with the arguments.
  */
-function argumentsToAddDependenciesWithNPM(dependency: string, type: DependencyType): string[] {
+function argumentsToAddDependenciesWithNPM(dependencies: string[], type: DependencyType): string[] {
   let command = ['install']
-  command = command.concat(dependency)
+  command = command.concat(dependencies)
   switch (type) {
     case 'dev':
       command.push('--save-dev')
@@ -466,10 +424,6 @@ function argumentsToAddDependenciesWithNPM(dependency: string, type: DependencyT
     case 'prod':
       command.push('--save-prod')
       break
-  }
-  // NPM adds ^ to the installed version by default. We want to install exact versions unless specified otherwise.
-  if (dependency.match(/@\d/g)) {
-    command.push('--save-exact')
   }
   return command
 }
@@ -527,8 +481,8 @@ function argumentsToAddDependenciesWithPNPM(dependencies: string[], type: Depend
  * @returns If found, the promise resolves with the path to the
  *  package.json and its content. If not found, it throws a FindUpAndReadPackageJsonNotFoundError error.
  */
-export async function findUpAndReadPackageJson(fromDirectory: string): Promise<{path: string; content: PackageJson}> {
-  const packageJsonPath = await findPathUp('package.json', {cwd: fromDirectory, type: 'file'})
+export async function findUpAndReadPackageJson(fromDirectory: string): Promise<{path: string; content: unknown}> {
+  const packageJsonPath = await findUp('package.json', {cwd: fromDirectory, type: 'file'})
   if (packageJsonPath) {
     const packageJson = JSON.parse(await readFile(packageJsonPath))
     return {path: packageJsonPath, content: packageJson}
@@ -537,9 +491,9 @@ export async function findUpAndReadPackageJson(fromDirectory: string): Promise<{
   }
 }
 
-export async function addResolutionOrOverride(directory: string, dependencies: {[key: string]: string}): Promise<void> {
+export async function addResolutionOrOverride(directory: string, dependencies: {[key: string]: string}) {
   const packageManager = await getPackageManager(directory)
-  const packageJsonPath = joinPath(directory, 'package.json')
+  const packageJsonPath = pathJoin(directory, 'package.json')
   const packageJsonContent = await readAndParsePackageJson(packageJsonPath)
 
   if (packageManager === 'yarn') {
@@ -554,26 +508,4 @@ export async function addResolutionOrOverride(directory: string, dependencies: {
   }
 
   await writeFile(packageJsonPath, JSON.stringify(packageJsonContent, null, 2))
-}
-
-/**
- * Returns the latest available version of an NPM package.
- * @param name - The name of the NPM package.
- * @returns A promise to get the latest available version of a package.
- */
-async function getLatestNPMPackageVersion(name: string) {
-  outputDebug(outputContent`Getting the latest version of NPM package: ${outputToken.raw(name)}`)
-  return latestVersion(name)
-}
-
-/**
- * Writes the package.json file to the given directory.
- *
- * @param directory - Directory where the package.json file will be written.
- * @param packageJSON - Package.json file to write.
- */
-export async function writePackageJSON(directory: string, packageJSON: PackageJson): Promise<void> {
-  outputDebug(outputContent`JSON-encoding and writing content to package.json at ${outputToken.path(directory)}...`)
-  const packagePath = joinPath(directory, 'package.json')
-  await writeFile(packagePath, JSON.stringify(packageJSON, null, 2))
 }

@@ -1,18 +1,14 @@
-import {bundleExtension, bundleThemeExtension} from './bundle.js'
+import {bundleExtension} from './bundle.js'
 import {testApp, testUIExtension} from '../../models/app/app.test-data.js'
-import {loadLocalExtensionsSpecifications} from '../../models/extensions/load-specifications.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
 import {describe, expect, test, vi} from 'vitest'
-import {context as esContext} from 'esbuild'
-import {AbortController} from '@shopify/cli-kit/node/abort'
-import {glob, inTemporaryDirectory, mkdir, touchFileSync} from '@shopify/cli-kit/node/fs'
-import {basename, joinPath} from '@shopify/cli-kit/node/path'
+import {build as esBuild, BuildOptions, WatchMode} from 'esbuild'
+import {abort} from '@shopify/cli-kit'
 
 vi.mock('esbuild', async () => {
   const esbuild: any = await vi.importActual('esbuild')
   return {
     ...esbuild,
-    context: vi.fn(),
+    build: vi.fn(),
   }
 })
 
@@ -34,24 +30,18 @@ describe('bundleExtension()', () => {
           FOO: 'BAR',
         },
       },
-      allExtensions: [extension],
+      extensions: {
+        ui: [extension],
+        theme: [],
+        function: [],
+      },
     })
-    const esbuildWatch = vi.fn()
-    const esbuildDispose = vi.fn()
-    const esbuildRebuild = vi.fn(esbuildResultFixture)
-
-    vi.mocked(esContext).mockResolvedValue({
-      rebuild: esbuildRebuild,
-      watch: esbuildWatch,
-      dispose: esbuildDispose,
-      cancel: vi.fn(),
-      serve: vi.fn(),
-    })
+    vi.mocked(esBuild).mockResolvedValue(esbuildResultFixture())
 
     // When
     await bundleExtension({
       env: app.dotenv?.variables ?? {},
-      outputPath: extension.outputPath,
+      outputBundlePath: extension.outputBundlePath,
       minify: true,
       environment: 'production',
       stdin: {
@@ -64,13 +54,9 @@ describe('bundleExtension()', () => {
     })
 
     // Then
-    const call = vi.mocked(esContext).mock.calls[0]!
+    const call = vi.mocked(esBuild).mock.calls[0] as any
     expect(call).not.toBeUndefined()
-    const options = call[0]
-
-    expect(esbuildWatch).not.toHaveBeenCalled()
-    expect(esbuildDispose).toHaveBeenCalledOnce()
-    expect(esbuildRebuild).toHaveBeenCalledOnce()
+    const options: BuildOptions = call[0]
 
     expect(options.bundle).toBeTruthy()
     expect(options.stdin).toStrictEqual({
@@ -78,7 +64,7 @@ describe('bundleExtension()', () => {
       resolveDir: 'mock/resolve/dir',
       loader: 'tsx',
     })
-    expect(options.outfile).toEqual(extension.outputPath)
+    expect(options.outfile).toEqual(extension.outputBundlePath)
     expect(options.loader).toEqual({
       '.esnext': 'ts',
       '.js': 'jsx',
@@ -92,80 +78,16 @@ describe('bundleExtension()', () => {
       'process.env.FOO': JSON.stringify('BAR'),
       'process.env.NODE_ENV': JSON.stringify('production'),
     })
-    expect(vi.mocked(stdout.write).mock.calls[0][0]).toMatchInlineSnapshot(`
-      "▲ [WARNING] warning text [plugin plugin]
+    expect(vi.mocked(stdout.write).calls[0][0]).toMatchInlineSnapshot(`
+      "▲ [WARNING] [plugin plugin] warning text
 
       "
     `)
-    expect(vi.mocked(stdout.write).mock.calls[0][0]).toMatchInlineSnapshot(`
-      "▲ [WARNING] warning text [plugin plugin]
+    expect(vi.mocked(stdout.write).calls[0][0]).toMatchInlineSnapshot(`
+      "▲ [WARNING] [plugin plugin] warning text
 
       "
     `)
-    const plugins = options.plugins?.map(({name}) => name)
-    expect(plugins).toContain('graphql-loader')
-    expect(plugins).toContain('shopify:deduplicate-react')
-  })
-
-  test('can switch off React deduplication', async () => {
-    // Given
-    const extension = await testUIExtension()
-    const stdout: any = {
-      write: vi.fn(),
-    }
-    const stderr: any = {
-      write: vi.fn(),
-    }
-    const app = testApp({
-      directory: '/project',
-      dotenv: {
-        path: '/project/.env',
-        variables: {
-          FOO: 'BAR',
-        },
-      },
-      allExtensions: [extension],
-    })
-    const esbuildWatch = vi.fn()
-    const esbuildDispose = vi.fn()
-    const esbuildRebuild = vi.fn(esbuildResultFixture)
-
-    vi.mocked(esContext).mockResolvedValue({
-      rebuild: esbuildRebuild,
-      watch: esbuildWatch,
-      dispose: esbuildDispose,
-      cancel: vi.fn(),
-      serve: vi.fn(),
-    })
-
-    // When
-    await bundleExtension(
-      {
-        env: app.dotenv?.variables ?? {},
-        outputPath: extension.outputPath,
-        minify: true,
-        environment: 'production',
-        stdin: {
-          contents: 'console.log("mock stdin content")',
-          resolveDir: 'mock/resolve/dir',
-          loader: 'tsx',
-        },
-        stdout,
-        stderr,
-      },
-      {
-        ...process.env,
-        SHOPIFY_CLI_SKIP_ESBUILD_REACT_DEDUPLICATION: 'true',
-      },
-    )
-
-    // Then
-    const call = vi.mocked(esContext).mock.calls[0]!
-    expect(call).not.toBeUndefined()
-    const options = call[0]
-
-    const plugins = options.plugins?.map(({name}) => name)
-    expect(plugins).not.toContain('shopify:deduplicate-react')
   })
 
   test('stops the ESBuild when the abort signal receives an event', async () => {
@@ -179,7 +101,11 @@ describe('bundleExtension()', () => {
           FOO: 'BAR',
         },
       },
-      allExtensions: [extension],
+      extensions: {
+        ui: [extension],
+        theme: [],
+        function: [],
+      },
     })
     const stdout: any = {
       write: vi.fn(),
@@ -187,23 +113,19 @@ describe('bundleExtension()', () => {
     const stderr: any = {
       write: vi.fn(),
     }
-    const esbuildDispose = vi.fn()
-    const esbuildWatch = vi.fn()
-    const esbuildRebuild = vi.fn()
+    const esbuildStop: any = vi.fn()
 
-    vi.mocked(esContext).mockResolvedValue({
-      dispose: esbuildDispose,
-      rebuild: esbuildRebuild,
-      watch: esbuildWatch,
-      serve: vi.fn(),
-      cancel: vi.fn(),
+    vi.mocked(esBuild).mockResolvedValue({
+      errors: [],
+      warnings: [],
+      stop: esbuildStop,
     })
-    const abortController = new AbortController()
+    const abortController = new abort.Controller()
 
     // When
     await bundleExtension({
       env: app.dotenv?.variables ?? {},
-      outputPath: extension.outputPath,
+      outputBundlePath: extension.outputBundlePath,
       minify: true,
       environment: 'production',
       stdin: {
@@ -213,22 +135,74 @@ describe('bundleExtension()', () => {
       },
       stdout,
       stderr,
-      watch: async (_result) => {},
       watchSignal: abortController.signal,
     })
     abortController.abort()
 
     // Then
-    const call = vi.mocked(esContext).mock.calls[0]!
-    const options = call[0]
-    const plugins = options.plugins?.map(({name}) => name)
-    expect(esbuildDispose).toHaveBeenCalledOnce()
-    expect(esbuildWatch).toHaveBeenCalled()
-    expect(esbuildRebuild).not.toHaveBeenCalled()
-    expect(plugins).toContain('rebuild-plugin')
+    expect(esbuildStop).toHaveBeenCalled()
   })
 
-  async function esbuildResultFixture() {
+  test('forwards and outputs watch events', async () => {
+    // Given
+    const extension = await testUIExtension()
+    const app = testApp({
+      directory: '/project',
+      dotenv: {
+        path: '/project/.env',
+        variables: {
+          FOO: 'BAR',
+        },
+      },
+      extensions: {
+        ui: [extension],
+        theme: [],
+        function: [],
+      },
+    })
+    const stdout: any = {
+      write: vi.fn(),
+    }
+    const stderr: any = {
+      write: vi.fn(),
+    }
+    const watcher = vi.fn()
+
+    // When
+    await bundleExtension({
+      env: app.dotenv?.variables ?? {},
+      outputBundlePath: extension.outputBundlePath,
+      minify: true,
+      environment: 'production',
+      stdin: {
+        contents: 'console.log("mock stdin content")',
+        resolveDir: 'mock/resolve/dir',
+        loader: 'tsx',
+      },
+      stdout,
+      stderr,
+      watch: watcher,
+    })
+
+    // Then
+    const call = vi.mocked(esBuild).mock.calls[0] as any
+    expect(call).not.toBeUndefined()
+    const options: BuildOptions = call[0]
+    const onRebuild = (options.watch as any).onRebuild as NonNullable<WatchMode['onRebuild']>
+    onRebuild(null, esbuildResultFixture())
+    expect(vi.mocked(stdout.write).calls[0][0]).toMatchInlineSnapshot(`
+      "▲ [WARNING] [plugin plugin] warning text
+
+      "
+    `)
+    expect(vi.mocked(stdout.write).calls[0][0]).toMatchInlineSnapshot(`
+      "▲ [WARNING] [plugin plugin] warning text
+
+      "
+    `)
+  })
+
+  function esbuildResultFixture() {
     return {
       errors: [
         {
@@ -250,78 +224,6 @@ describe('bundleExtension()', () => {
           detail: {},
         },
       ],
-      outputFiles: [],
-      metafile: {
-        inputs: {},
-        outputs: {},
-      },
-      mangleCache: {},
     }
   }
-  describe('bundleThemeExtension()', () => {
-    test('should skip all ignored file patterns', async () => {
-      await inTemporaryDirectory(async (tmpDir) => {
-        // Given
-        const allSpecs = await loadLocalExtensionsSpecifications()
-        const specification = allSpecs.find((spec) => spec.identifier === 'theme')!
-        const themeExtension = new ExtensionInstance({
-          configuration: {
-            name: 'theme extension name',
-            type: 'theme' as const,
-            metafields: [],
-          },
-          configurationPath: '',
-          directory: tmpDir,
-          specification,
-        })
-
-        const outputPath = joinPath(tmpDir, 'dist')
-        await mkdir(outputPath)
-        themeExtension.outputPath = outputPath
-
-        const app = testApp({
-          directory: '/project',
-          dotenv: {
-            path: '/project/.env',
-            variables: {
-              FOO: 'BAR',
-            },
-          },
-          allExtensions: [themeExtension],
-        })
-
-        const stdout: any = {
-          write: vi.fn(),
-        }
-        const stderr: any = {
-          write: vi.fn(),
-        }
-
-        const blocksPath = joinPath(tmpDir, 'blocks')
-        await mkdir(blocksPath)
-
-        const ignoredFiles = ['.gitkeep', '.DS_Store', '.shopify.theme.extension.toml']
-        await Promise.all(
-          ['test.liquid', ...ignoredFiles].map(async (filename) => {
-            touchFileSync(joinPath(blocksPath, filename))
-            touchFileSync(joinPath(tmpDir, filename))
-          }),
-        )
-
-        // When
-        await bundleThemeExtension(themeExtension, {
-          app,
-          stdout,
-          stderr,
-        })
-
-        // Then
-        const filePaths = await glob(joinPath(themeExtension.outputPath, '/**/*'))
-        const hasFiles = filePaths
-          .map((filePath) => basename(filePath))
-          .some((filename) => ignoredFiles.includes(filename))
-        expect(hasFiles).toEqual(false)
-      })
-    })
-  })
 })

@@ -12,5 +12,5 @@ The Shopify CLI supports plugins as a way to extend its feature set, both adding
 
 To install a plugin simply run:
 ```bash
-pnpm shopify plugins install {plugin_name}
+yarn shopify plugins install {plugin_name}
 ```

@@ -1,10 +1,9 @@
 import {ExtensionsPayloadStore, ExtensionsPayloadStoreEvent} from './payload/store.js'
 import {setupWebsocketConnection} from './websocket.js'
 import {websocketUpgradeHandler, getPayloadUpdateHandler} from './websocket/handlers.js'
-import {ExtensionDevOptions} from '../extension.js'
 import {describe, test, expect, vi, beforeEach, afterEach} from 'vitest'
 import {WebSocketServer} from 'ws'
-import {Server} from 'https'
+import {Server} from 'node:https'
 
 vi.mock('./websocket/handlers.js')
 vi.mock('ws')
@@ -14,8 +13,7 @@ describe('setupWebsocketConnection', () => {
   const handler: any = {}
   const payloadStore: ExtensionsPayloadStore = {on: vi.fn()} as any
   const httpServer: Server = {on: vi.fn()} as any
-  const devOptions = {} as unknown as ExtensionDevOptions
-  const options = {...devOptions, httpServer, payloadStore}
+  const options = {httpServer, payloadStore}
 
   beforeEach(() => {
     vi.useFakeTimers()

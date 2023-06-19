@@ -1,5 +1,3 @@
-import type {LocalesOptions} from 'i18n'
-
 declare global {
   namespace ExtensionServer {
     /**
@@ -58,12 +56,6 @@ declare global {
        * If provided the extension server will only return extensions that matches the specified surface
        */
       surface?: Surface
-
-      /**
-       * If provided the extension server will return a requested translations object with flattened
-       * translations for each extension matching the requested locales
-       */
-      locales?: LocalesOptions
     }
 
     /**
@@ -80,6 +72,11 @@ declare global {
        * Reconnecting WebSocket Client
        */
       connection: WebSocket
+
+      /**
+       * API Client
+       */
+      api: API.Client
 
       /**
        * Function to add an event listener to messages coming from
@@ -117,6 +114,87 @@ declare global {
      */
     type StaticClient = Static<ExtensionServer.Client, [option?: ExtensionServer.Options]>
 
+    // API responses
+    namespace API {
+      interface Client {
+        url: string
+        extensions(): Promise<ExtensionsResponse>
+        extensionById(id: string): Promise<ExtensionResponse>
+      }
+
+      interface BaseResponse {
+        app: App
+        root: ResourceURL
+        socket: ResourceURL
+        devConsole: ResourceURL
+        store: string
+        version: string
+      }
+
+      interface ExtensionsResponse extends BaseResponse {
+        extensions: Extension[]
+      }
+
+      interface ExtensionResponse extends BaseResponse {
+        extension: Extension
+      }
+
+      interface App {
+        apiKey: string
+        [key: string]: string
+      }
+
+      interface Extension {
+        assets: Assets
+        development: Development
+        extensionPoints: string[] | null
+        surface: Surface
+        name?: string
+        title?: string
+        type: string
+        metafields: Metafield[] | null
+        uuid: string
+        version: string
+      }
+
+      interface Assets {
+        [name: string]: Asset
+      }
+
+      interface Asset {
+        name: string
+        url: string
+        lastUpdated: number
+        rawSearchParams?: string
+      }
+
+      interface Development {
+        root: ResourceURL
+        resource: ResourceURL
+        renderer?: Renderer
+        hidden: boolean
+        buildDir?: string
+        rootDir?: string
+        template?: string
+        entries?: {[key: string]: string}
+        status: string
+      }
+
+      interface ResourceURL {
+        url: string
+      }
+
+      interface Renderer {
+        name: string
+        version: string
+      }
+
+      interface Metafield {
+        namespace: string
+        key: string
+      }
+    }
+
     // Utilities
 
     /**
@@ -152,8 +230,8 @@ declare global {
   }
 }
 
-export const AVAILABLE_SURFACES = ['admin', 'checkout', 'post-checkout', 'point_of_sale', 'customer-accounts'] as const
+export const AVAILABLE_SURFACES = ['admin', 'checkout', 'post-checkout', 'pos', 'customer-accounts'] as const
 
-export type Surface = (typeof AVAILABLE_SURFACES)[number]
+export type Surface = typeof AVAILABLE_SURFACES[number]
 
 export {}

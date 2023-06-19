@@ -1,20 +1,9 @@
 import {outputEnv} from './app/env/show.js'
-import {CachedAppInfo, getAppInfo} from './local-storage.js'
 import {AppInterface} from '../models/app/app.js'
-import {configurationFileNames} from '../constants.js'
-import {ExtensionInstance} from '../models/extensions/extension-instance.js'
-import {platformAndArch} from '@shopify/cli-kit/node/os'
+import {FunctionExtension, ThemeExtension, UIExtension} from '../models/app/extensions.js'
+import {configurationFileNames, functionExtensions, themeExtensions, uiExtensions} from '../constants.js'
+import {os, output, path, store, string} from '@shopify/cli-kit'
 import {checkForNewVersion} from '@shopify/cli-kit/node/node-package-manager'
-import {linesToColumns} from '@shopify/cli-kit/common/string'
-import {relativePath} from '@shopify/cli-kit/node/path'
-import {
-  OutputMessage,
-  outputContent,
-  outputToken,
-  formatSection,
-  stringifyMessage,
-  getOutputUpdateCLIReminder,
-} from '@shopify/cli-kit/node/output'
 
 export type Format = 'json' | 'text'
 interface InfoOptions {
@@ -27,7 +16,7 @@ interface Configurable {
   externalType: string
 }
 
-export async function info(app: AppInterface, {format, webEnv}: InfoOptions): Promise<OutputMessage> {
+export async function info(app: AppInterface, {format, webEnv}: InfoOptions): Promise<output.Message> {
   if (webEnv) {
     return infoWeb(app, {format})
   } else {
@@ -35,25 +24,25 @@ export async function info(app: AppInterface, {format, webEnv}: InfoOptions): Pr
   }
 }
 
-export async function infoWeb(app: AppInterface, {format}: Omit<InfoOptions, 'webEnv'>): Promise<OutputMessage> {
+export async function infoWeb(app: AppInterface, {format}: Omit<InfoOptions, 'webEnv'>): Promise<output.Message> {
   return outputEnv(app, format)
 }
 
-export async function infoApp(app: AppInterface, {format}: Omit<InfoOptions, 'webEnv'>): Promise<OutputMessage> {
+export async function infoApp(app: AppInterface, {format}: Omit<InfoOptions, 'webEnv'>): Promise<output.Message> {
   if (format === 'json') {
-    return outputContent`${JSON.stringify(app, null, 2)}`
+    return output.content`${JSON.stringify(app, null, 2)}`
   } else {
     const appInfo = new AppInfo(app)
     return appInfo.output()
   }
 }
 
-const UNKNOWN_TEXT = outputContent`${outputToken.italic('unknown')}`.value
-const NOT_CONFIGURED_TEXT = outputContent`${outputToken.italic('Not yet configured')}`.value
+const UNKNOWN_TEXT = output.content`${output.token.italic('unknown')}`.value
+const NOT_CONFIGURED_TEXT = output.content`${output.token.italic('Not yet configured')}`.value
 
 class AppInfo {
   private app: AppInterface
-  private cachedAppInfo: CachedAppInfo | undefined
+  private cachedAppInfo: store.CachedAppInfo | undefined
 
   constructor(app: AppInterface) {
     this.app = app
@@ -61,33 +50,33 @@ class AppInfo {
 
   async output(): Promise<string> {
     const sections: [string, string][] = [
-      this.devConfigsSection(),
+      await this.devConfigsSection(),
       this.projectSettingsSection(),
-      await this.appComponentsSection(),
+      this.appComponentsSection(),
       this.accessScopesSection(),
       await this.systemInfoSection(),
     ]
-    return sections.map((sectionContents: [string, string]) => formatSection(...sectionContents)).join('\n\n')
+    return sections.map((sectionContents: [string, string]) => output.section(...sectionContents)).join('\n\n')
   }
 
-  devConfigsSection(): [string, string] {
+  async devConfigsSection(): Promise<[string, string]> {
     const title = 'Configs for Dev'
 
     let appName = NOT_CONFIGURED_TEXT
     let storeDescription = NOT_CONFIGURED_TEXT
     let apiKey = NOT_CONFIGURED_TEXT
     let updateURLs = NOT_CONFIGURED_TEXT
-    let postscript = outputContent`💡 These will be populated when you run ${outputToken.packagejsonScript(
+    let postscript = output.content`💡 These will be populated when you run ${output.token.packagejsonScript(
       this.app.packageManager,
       'dev',
     )}`.value
-    const cachedAppInfo = getAppInfo(this.app.directory)
+    const cachedAppInfo = await store.getAppInfo(this.app.directory)
     if (cachedAppInfo) {
       if (cachedAppInfo.title) appName = cachedAppInfo.title
       if (cachedAppInfo.storeFqdn) storeDescription = cachedAppInfo.storeFqdn
       if (cachedAppInfo.appId) apiKey = cachedAppInfo.appId
       if (cachedAppInfo.updateURLs !== undefined) updateURLs = cachedAppInfo.updateURLs ? 'Always' : 'Never'
-      postscript = outputContent`💡 To change these, run ${outputToken.packagejsonScript(
+      postscript = output.content`💡 To change these, run ${output.token.packagejsonScript(
         this.app.packageManager,
         'dev',
         '--reset',
@@ -99,7 +88,7 @@ class AppInfo {
       ['API key', apiKey],
       ['Update URLs', updateURLs],
     ]
-    return [title, `${linesToColumns(lines)}\n\n${postscript}`]
+    return [title, `${string.linesToColumns(lines)}\n\n${postscript}`]
   }
 
   projectSettingsSection(): [string, string] {
@@ -108,35 +97,42 @@ class AppInfo {
       ['Name', this.app.name],
       ['Root location', this.app.directory],
     ]
-    return [title, linesToColumns(lines)]
+    return [title, string.linesToColumns(lines)]
   }
 
-  async appComponentsSection(): Promise<[string, string]> {
+  appComponentsSection(): [string, string] {
     const title = 'Directory Components'
 
     let body = `\n${this.webComponentsSection()}`
 
     function augmentWithExtensions<TExtension extends Configurable>(
+      extensionTypes: ReadonlyArray<string>,
       extensions: TExtension[],
       outputFormatter: (extension: TExtension) => string,
     ) {
-      const types = new Set(extensions.map((ext) => ext.type))
-      types.forEach((extensionType: string) => {
+      extensionTypes.forEach((extensionType: string) => {
         const relevantExtensions = extensions.filter((extension: TExtension) => extension.type === extensionType)
         if (relevantExtensions[0]) {
-          body += `\n\n${outputContent`${outputToken.subheading(relevantExtensions[0].externalType)}`.value}`
+          body += `\n\n${output.content`${output.token.subheading(relevantExtensions[0].externalType)}`.value}`
           relevantExtensions.forEach((extension: TExtension) => {
             body += `${outputFormatter(extension)}`
           })
         }
       })
     }
+    augmentWithExtensions(uiExtensions.types, this.app.extensions.ui, this.uiExtensionSubSection.bind(this))
+    augmentWithExtensions(themeExtensions.types, this.app.extensions.theme, this.themeExtensionSubSection.bind(this))
+    augmentWithExtensions(
+      functionExtensions.types,
+      this.app.extensions.function,
+      this.functionExtensionSubSection.bind(this),
+    )
 
-    augmentWithExtensions(this.app.allExtensions, this.extensionSubSection.bind(this))
+    const allExtensions = [...this.app.extensions.ui, ...this.app.extensions.theme, ...this.app.extensions.function]
 
     if (this.app.errors?.isEmpty() === false) {
-      body += `\n\n${outputContent`${outputToken.subheading('Extensions with errors')}`.value}`
-      this.app.allExtensions.forEach((extension) => {
+      body += `\n\n${output.content`${output.token.subheading('Extensions with errors')}`.value}`
+      allExtensions.forEach((extension) => {
         body += `${this.invalidExtensionSubSection(extension)}`
       })
     }
@@ -144,17 +140,17 @@ class AppInfo {
   }
 
   webComponentsSection(): string {
-    const errors: OutputMessage[] = []
-    const subtitle = [outputContent`${outputToken.subheading('web')}`.value]
+    const errors: output.Message[] = []
+    const subtitle = [output.content`${output.token.subheading('web')}`.value]
     const toplevel = ['📂 web', '']
     const sublevels: [string, string][] = []
     this.app.webs.forEach((web) => {
       if (web.configuration && web.configuration.type) {
-        sublevels.push([`  📂 ${web.configuration.type}`, relativePath(this.app.directory, web.directory)])
+        sublevels.push([`  📂 ${web.configuration.type}`, path.relative(this.app.directory, web.directory)])
       } else if (this.app.errors) {
         const error = this.app.errors.getError(`${web.directory}/${configurationFileNames.web}`)
         if (error) {
-          sublevels.push([`  📂 ${UNKNOWN_TEXT}`, relativePath(this.app.directory, web.directory)])
+          sublevels.push([`  📂 ${UNKNOWN_TEXT}`, path.relative(this.app.directory, web.directory)])
           errors.push(error)
         }
       }
@@ -162,48 +158,68 @@ class AppInfo {
     let errorContent = `\n${errors.map(this.formattedError).join('\n')}`
     if (errorContent.trim() === '') errorContent = ''
 
-    return `${subtitle}\n${linesToColumns([toplevel, ...sublevels])}${errorContent}`
+    return `${subtitle}\n${string.linesToColumns([toplevel, ...sublevels])}${errorContent}`
   }
 
-  extensionSubSection(extension: ExtensionInstance): string {
+  uiExtensionSubSection(extension: UIExtension): string {
     const config = extension.configuration
     const details = [
-      [`📂 ${config.name}`, relativePath(this.app.directory, extension.directory)],
-      ['     config file', relativePath(extension.directory, extension.configurationPath)],
+      [`📂 ${config.name}`, path.relative(this.app.directory, extension.directory)],
+      ['     config file', path.relative(extension.directory, extension.configurationPath)],
     ]
     if (config && config.metafields?.length) {
       details.push(['     metafields', `${config.metafields.length}`])
     }
 
-    return `\n${linesToColumns(details)}`
+    return `\n${string.linesToColumns(details)}`
   }
 
-  invalidExtensionSubSection(extension: ExtensionInstance): string {
+  functionExtensionSubSection(extension: FunctionExtension): string {
+    const config = extension.configuration
+    const details = [
+      [`📂 ${config.name}`, path.relative(this.app.directory, extension.directory)],
+      ['     config file', path.relative(extension.directory, extension.configurationPath)],
+    ]
+
+    return `\n${string.linesToColumns(details)}`
+  }
+
+  themeExtensionSubSection(extension: ThemeExtension): string {
+    const config = extension.configuration
+    const details = [
+      [`📂 ${config.name}`, path.relative(this.app.directory, extension.directory)],
+      ['     config file', path.relative(extension.directory, extension.configurationPath)],
+    ]
+
+    return `\n${string.linesToColumns(details)}`
+  }
+
+  invalidExtensionSubSection(extension: UIExtension | FunctionExtension | ThemeExtension): string {
     const error = this.app.errors?.getError(extension.configurationPath)
     if (!error) return ''
     const details = [
-      [`📂 ${extension.configuration?.type}`, relativePath(this.app.directory, extension.directory)],
-      ['     config file', relativePath(extension.directory, extension.configurationPath)],
+      [`📂 ${extension.configuration?.type}`, path.relative(this.app.directory, extension.directory)],
+      ['     config file', path.relative(extension.directory, extension.configurationPath)],
     ]
     const formattedError = this.formattedError(error)
-    return `\n${linesToColumns(details)}\n${formattedError}`
+    return `\n${string.linesToColumns(details)}\n${formattedError}`
   }
 
-  formattedError(str: OutputMessage): string {
-    const [errorFirstLine, ...errorRemainingLines] = stringifyMessage(str).split('\n')
+  formattedError(str: output.Message): string {
+    const [errorFirstLine, ...errorRemainingLines] = output.stringifyMessage(str).split('\n')
     const errorLines = [`! ${errorFirstLine}`, ...errorRemainingLines.map((line) => `  ${line}`)]
-    return outputContent`${outputToken.errorText(errorLines.join('\n'))}`.value
+    return output.content`${output.token.errorText(errorLines.join('\n'))}`.value
   }
 
   accessScopesSection(): [string, string] {
     const title = 'Access Scopes in Root TOML File'
     const lines = this.app.configuration.scopes.split(',').map((scope) => [scope])
-    return [title, linesToColumns(lines)]
+    return [title, string.linesToColumns(lines)]
   }
 
   async systemInfoSection(): Promise<[string, string]> {
     const title = 'Tooling and System'
-    const {platform, arch} = platformAndArch()
+    const {platform, arch} = os.platformAndArch()
     const versionUpgradeMessage = await this.versionUpgradeMessage()
     const cliVersionInfo = [this.currentCliVersion(), versionUpgradeMessage].join(' ').trim()
     const lines: string[][] = [
@@ -213,7 +229,7 @@ class AppInfo {
       ['Shell', process.env.SHELL || 'unknown'],
       ['Node version', process.version],
     ]
-    return [title, `${linesToColumns(lines)}`]
+    return [title, `${string.linesToColumns(lines)}`]
   }
 
   currentCliVersion(): string {
@@ -224,7 +240,7 @@ class AppInfo {
     const cliDependency = '@shopify/cli'
     const newestVersion = await checkForNewVersion(cliDependency, this.currentCliVersion())
     if (newestVersion) {
-      return getOutputUpdateCLIReminder(this.app.packageManager, newestVersion)
+      return output.getOutputUpdateCLIReminder(this.app.packageManager, newestVersion)
     }
     return ''
   }

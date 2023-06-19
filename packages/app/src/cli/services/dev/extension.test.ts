@@ -18,8 +18,6 @@ describe('devUIExtensions()', () => {
     mock: 'options',
     url: 'https://mock.url',
     signal: {addEventListener: vi.fn()},
-    stdout: process.stdout,
-    stderr: process.stderr,
   } as unknown as ExtensionDevOptions
 
   function spyOnEverything() {
@@ -83,7 +81,6 @@ describe('devUIExtensions()', () => {
 
     // THEN
     expect(websocket.setupWebsocketConnection).toHaveBeenCalledWith({
-      ...options,
       httpServer: expect.objectContaining({mock: 'http-server'}),
       payloadStore: {mock: 'payload-store'},
     })

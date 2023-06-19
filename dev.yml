@@ -2,23 +2,17 @@ name: shopify-cli-next
 
 up:
   - node:
+      yarn: 1.22.19
       version: v18.7.0
-      packages: []
+      packages:
+        - ./
   - ruby:
       version: 3.1.2
-  - bundler:
-      gemfile: packages/cli-kit/assets/cli-ruby/Gemfile
   - homebrew:
     - jq
     - delve
     - pnpm:
-        version: 8.6.1
-  - custom:
-      name: 'Install PNPM dependencies'
-      # we flip these two conditions to always run `pnpm install`
-      # whenever we run dev up.
-      met?: pnpm install
-      meet: 'true'
+        version: 7.9.3
 
 env:
   SHOPIFY_CLI_ENV: development
@@ -30,31 +24,55 @@ open:
 commands:
   graph:
     desc: 'Shows the graph of the project'
-    run: pnpm nx graph
+    run: yarn nx graph
   shopify:
     desc: 'Runs the Shopify CLI'
-    run: pnpm shopify
+    run: yarn shopify
   create-app:
     desc: 'Runs the create-app CLI'
-    run: pnpm create-app
+    run: yarn create-app
+  create-hydrogen:
+    desc: 'Runs the create-hydrogen CLI'
+    run: yarn create-hydrogen
   clean:
     desc: 'Clean the packages'
-    run: pnpm run clean
+    run: yarn run clean
   test:
     desc: 'Runs the tests'
-    run: pnpm run test:affected
+    run: yarn run test:affected
   build:
     desc: 'Build the project'
-    run: pnpm run build:affected
+    run: yarn run build:affected
   lint:
     desc: 'Lint the project'
-    run: pnpm run lint:affected
+    run: yarn run lint:affected
   lint:fix:
     desc: 'Fix the lint issues in the project'
-    run: pnpm run lint:fix:affected
+    run: yarn run lint:fix:affected
   type-check:
     desc: 'Type-check the project'
-    run: pnpm run type-check:affected
+    run: yarn run type-check:affected
+  fixture:
+    desc: 'Commands to interact with the fixture project'
+    subcommands:
+      shopify:
+        desc: Runs Shopify with the fixture project
+        run: yarn --cwd fixtures/app shopify
+      build:
+        desc: Build the fixture project
+        run: yarn --cwd fixtures/app build
+      dev:
+        desc: Dev the fixture project
+        run: yarn --cwd fixtures/app dev
+      test:
+        desc: Test the fixture project
+        run: yarn --cwd fixtures/app test
+      generate:
+        desc: Generate in the fixture project
+        run: yarn --cwd fixtures/app generate
+      env:
+        desc: Show and/or update the env file in the fixture project
+        run: yarn --cwd fixtures/app env
   spin:
     desc: 'Run commands in spin context'
     run: bin/spin

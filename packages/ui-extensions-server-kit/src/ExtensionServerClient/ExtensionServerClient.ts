@@ -1,19 +1,14 @@
 /* eslint-disable no-console */
-import {Surface} from './types.js'
-import {
-  FlattenedLocalization,
-  Localization,
-  TRANSLATED_KEYS,
-  getFlattenedLocalization,
-  isFlattenedTranslations,
-} from '../i18n'
-import {isUIExtension, isValidSurface} from '../utilities'
-import {DeepPartial, ExtensionPayload, ExtensionPoint} from '../types'
+import {APIClient} from './APIClient'
+import {isValidSurface} from '../utilities'
+import {DeepPartial} from '../types'
 
 export class ExtensionServerClient implements ExtensionServer.Client {
   public id: string
 
   public connection!: WebSocket
+
+  public api!: ExtensionServer.API.Client
 
   public options: ExtensionServer.Options
 
@@ -22,8 +17,6 @@ export class ExtensionServerClient implements ExtensionServer.Client {
   protected listeners: {[key: string]: Set<any>} = {}
 
   protected connected = false
-
-  private uiExtensionsByUuid: {[key: string]: ExtensionServer.UIExtension} = {}
 
   constructor(options: DeepPartial<ExtensionServer.Options> = {}) {
     this.id = (Math.random() + 1).toString(36).substring(7)
@@ -70,43 +63,6 @@ export class ExtensionServerClient implements ExtensionServer.Client {
     data: ExtensionServer.OutboundPersistEvents[TEvent],
   ): void {
     if (this.EVENT_THAT_WILL_MUTATE_THE_SERVER.includes(event)) {
-      if (!this.options.locales) {
-        return this.connection?.send(JSON.stringify({event, data}))
-      }
-
-      /**
-       * Since each websocket connection will have its own translated values
-       * we need to strip out all translated properties to prevent
-       * mutating the Dev Server's data
-       * Before:
-       * ```
-       * {
-       *  localization: {...},
-       *  extensionPoints: [{
-       *    target: 'admin.product.item.action'
-       *    label: 'en label'
-       *    localization: {...}
-       *  }],
-       * }
-       * ```
-       * After:
-       * ```
-       *  extensionPoints: [{
-       *    target: 'admin.product.item.action'
-       *  }],
-       * }
-       * ```
-       */
-      data.extensions?.forEach((extension) => {
-        TRANSLATED_KEYS.forEach((key) => {
-          if (isUIExtension(extension)) {
-            extension.extensionPoints?.forEach((extensionPoint) => {
-              delete extensionPoint[key as keyof ExtensionPoint]
-            })
-          }
-          delete extension[key as keyof ExtensionPayload]
-        })
-      })
       return this.connection?.send(JSON.stringify({event, data}))
     }
 
@@ -123,6 +79,17 @@ export class ExtensionServerClient implements ExtensionServer.Client {
     }
 
     this.connection?.send(JSON.stringify({event: 'dispatch', data: {type: event, payload: data}}))
+  }
+
+  protected initializeApiClient() {
+    let url = ''
+    if (this.options.connection.url) {
+      // eslint-disable-next-line node/no-unsupported-features/node-builtins
+      const socketUrl = new URL(this.options.connection.url)
+      socketUrl.protocol = socketUrl.protocol === 'ws:' ? 'http:' : 'https:'
+      url = socketUrl.origin
+    }
+    this.api = new APIClient(url, this.options.surface)
   }
 
   protected initializeConnection() {
@@ -148,12 +115,11 @@ export class ExtensionServerClient implements ExtensionServer.Client {
           return
         }
 
-        const filteredExtensions = data.extensions
-          ? filterExtensionsBySurface(data.extensions, this.options.surface)
-          : data.extensions
-
+        const filteredExtensions = data.extensions?.filter(
+          (extension: any) => !this.options.surface || extension.surface === this.options.surface,
+        )
         this.listeners[event]?.forEach((listener) => {
-          listener({...data, extensions: this._getLocalizedExtensions(filteredExtensions)})
+          listener({...data, extensions: filteredExtensions})
         })
         // eslint-disable-next-line no-catch-all/no-catch-all
       } catch (err) {
@@ -168,6 +134,10 @@ export class ExtensionServerClient implements ExtensionServer.Client {
   protected setupConnection(connectWebsocket = true) {
     if (!this.options.connection.url) {
       return
+    }
+
+    if (!this.api || this.api.url !== this.connection.url) {
+      this.initializeApiClient()
     }
 
     if (!connectWebsocket) {
@@ -185,56 +155,6 @@ export class ExtensionServerClient implements ExtensionServer.Client {
     if (this.connected) {
       this.connection?.close()
     }
-  }
-
-  private _getLocalizedExtensions(extensions?: ExtensionPayload[]) {
-    return extensions?.map((extension) => {
-      if (!this.options.locales || !isUIExtension(extension)) {
-        return extension
-      }
-
-      const shouldUpdateTranslations =
-        this.uiExtensionsByUuid[extension.uuid]?.localization?.lastUpdated !== extension.localization?.lastUpdated
-
-      const localization = shouldUpdateTranslations
-        ? getFlattenedLocalization(extension.localization, this.options.locales)
-        : this.uiExtensionsByUuid[extension.uuid]?.localization || extension.localization
-
-      this.uiExtensionsByUuid[extension.uuid] = {
-        ...extension,
-        localization,
-        extensionPoints: this._getLocalizedExtensionPoints(localization, extension.extensionPoints),
-      }
-
-      return this.uiExtensionsByUuid[extension.uuid]
-    })
-  }
-
-  private _getLocalizedExtensionPoints(
-    localization: FlattenedLocalization | Localization | null | undefined,
-    extensionPoints: ExtensionPoint[],
-  ): ExtensionPoint[] {
-    if (!localization || !isFlattenedTranslations(localization)) {
-      return extensionPoints
-    }
-
-    const parsedTranslation = JSON.parse(localization.translations)
-
-    return extensionPoints?.map((extensionPoint) => {
-      return {
-        ...extensionPoint,
-        localization,
-        label:
-          extensionPoint.label && extensionPoint.label.startsWith('t:')
-            ? this._getLocalizedLabel(parsedTranslation, extensionPoint.label)
-            : extensionPoint.label,
-      }
-    })
-  }
-
-  private _getLocalizedLabel(translations: {[x: string]: string}, label: string): string {
-    const translationKey = label.replace('t:', '')
-    return translations[translationKey] || label
   }
 }
 
@@ -254,31 +174,4 @@ function getValidatedOptions<TOptions extends DeepPartial<ExtensionServer.Option
     delete options.surface
   }
   return options
-}
-
-function filterExtensionsBySurface(extensions: ExtensionPayload[], surface: Surface | undefined): ExtensionPayload[] {
-  if (!surface) {
-    return extensions
-  }
-
-  return extensions.filter((extension) => {
-    if (extension.surface === surface) {
-      return true
-    }
-
-    if (Array.isArray(extension.extensionPoints)) {
-      const extensionPoints: (string | {surface: Surface; [key: string]: any})[] = extension.extensionPoints
-      const extensionPointMatchingSurface = extensionPoints.filter((extensionPoint) => {
-        if (typeof extensionPoint === 'string') {
-          return false
-        }
-
-        return extensionPoint.surface === surface
-      })
-
-      return extensionPointMatchingSurface.length > 0
-    }
-
-    return false
-  })
 }

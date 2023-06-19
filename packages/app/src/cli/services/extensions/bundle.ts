@@ -1,23 +1,12 @@
-import {ExtensionBuildOptions} from '../build/extension.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {themeExtensionFiles} from '../../utilities/extensions/theme.js'
-import {environmentVariableNames} from '../../constants.js'
-import {context as esContext, BuildResult, formatMessagesSync} from 'esbuild'
-import {AbortSignal} from '@shopify/cli-kit/node/abort'
-import {copyFile} from '@shopify/cli-kit/node/fs'
-import {joinPath, relativePath} from '@shopify/cli-kit/node/path'
-import {outputDebug} from '@shopify/cli-kit/node/output'
-import {isTruthy} from '@shopify/cli-kit/node/context/utilities'
-import {Writable} from 'stream'
-import {createRequire} from 'module'
-import type {StdinOptions, build as esBuild, Plugin} from 'esbuild'
-
-const require = createRequire(import.meta.url)
+import {abort} from '@shopify/cli-kit'
+import {build as esBuild, BuildFailure, BuildResult, formatMessagesSync} from 'esbuild'
+import {Writable} from 'node:stream'
+import type {StdinOptions} from 'esbuild'
 
 export interface BundleOptions {
   minify: boolean
   env: {[variable: string]: string}
-  outputPath: string
+  outputBundlePath: string
   stdin: StdinOptions
   stdout: Writable
   stderr: Writable
@@ -27,12 +16,12 @@ export interface BundleOptions {
    * When ESBuild detects changes in any of the modules of the graph it re-bundles it
    * and calls this watch function.
    */
-  watch?: (result: BuildResult | null) => Promise<void>
+  watch?: (error: BuildFailure | null, result: BuildResult | null) => void
 
   /**
    * This signal allows the caller to stop the watching process.
    */
-  watchSignal?: AbortSignal
+  watchSignal?: abort.Signal
 
   /**
    * Context:
@@ -49,40 +38,18 @@ export interface BundleOptions {
 /**
  * Invokes ESBuild with the given options to bundle an extension.
  * @param options - ESBuild options
- * @param processEnv - Environment variables for the running process (not those from .env)
  */
-export async function bundleExtension(options: BundleOptions, processEnv = process.env) {
-  const esbuildOptions = getESBuildOptions(options, processEnv)
-  const context = await esContext(esbuildOptions)
-  if (options.watch) {
-    await context.watch()
-  } else {
-    const result = await context.rebuild()
-    onResult(result, options)
-    await context.dispose()
-  }
-
+export async function bundleExtension(options: BundleOptions) {
+  const esbuildOptions = getESBuildOptions(options)
+  const result = await esBuild(esbuildOptions)
   if (options.watchSignal) {
-    options.watchSignal.addEventListener('abort', async () => {
-      await context.dispose()
+    options.watchSignal.addEventListener('abort', () => {
+      if (result.stop) {
+        result.stop()
+      }
     })
   }
-}
-
-export async function bundleThemeExtension(
-  extension: ExtensionInstance,
-  options: ExtensionBuildOptions,
-): Promise<void> {
-  options.stdout.write(`Bundling theme extension ${extension.localIdentifier}...`)
-  const files = await themeExtensionFiles(extension)
-
-  await Promise.all(
-    files.map(function (filepath) {
-      const relativePathName = relativePath(extension.directory, filepath)
-      const outputFile = joinPath(extension.outputPath, relativePathName)
-      return copyFile(filepath, outputFile)
-    }),
-  )
+  onResult(result, options)
 }
 
 function onResult(result: Awaited<ReturnType<typeof esBuild>> | null, options: BundleOptions) {
@@ -102,7 +69,7 @@ function onResult(result: Awaited<ReturnType<typeof esBuild>> | null, options: B
   }
 }
 
-function getESBuildOptions(options: BundleOptions, processEnv = process.env): Parameters<typeof esContext>[0] {
+function getESBuildOptions(options: BundleOptions): Parameters<typeof esBuild>[0] {
   const env: {[variable: string]: string} = options.env
   const define = Object.keys(env || {}).reduce(
     (acc, key) => ({
@@ -111,8 +78,8 @@ function getESBuildOptions(options: BundleOptions, processEnv = process.env): Pa
     }),
     {'process.env.NODE_ENV': JSON.stringify(options.environment)},
   )
-  const esbuildOptions: Parameters<typeof esContext>[0] = {
-    outfile: options.outputPath,
+  let esbuildOptions: Parameters<typeof esBuild>[0] = {
+    outfile: options.outputBundlePath,
     stdin: options.stdin,
     bundle: true,
     define,
@@ -123,32 +90,32 @@ function getESBuildOptions(options: BundleOptions, processEnv = process.env): Pa
     },
     legalComments: 'none',
     minify: options.minify,
-    plugins: getPlugins(options.stdin.resolveDir, processEnv),
+    plugins: getPlugins(),
     target: 'es6',
     resolveExtensions: ['.tsx', '.ts', '.js', '.json', '.esnext', '.mjs', '.ejs'],
   }
   if (options.watch) {
     const watch = options.watch
-    esbuildOptions.plugins?.push({
-      name: 'rebuild-plugin',
-      setup(build) {
-        build.onEnd(async (result) => {
+    esbuildOptions = {
+      ...esbuildOptions,
+      watch: {
+        onRebuild: (error, result) => {
           onResult(result, options)
-          await watch(result)
-        })
+          watch(error, result)
+        },
       },
-    })
+    }
   }
   return esbuildOptions
 }
 
-type ESBuildPlugins = Parameters<typeof esContext>[0]['plugins']
+type ESBuildPlugins = Parameters<typeof esBuild>[0]['plugins']
 
 /**
  * It returns the plugins that should be used with ESBuild.
  * @returns List of plugins.
  */
-function getPlugins(resolveDir: string | undefined, processEnv = process.env): ESBuildPlugins {
+function getPlugins(): ESBuildPlugins {
   const plugins = []
 
   if (isGraphqlPackageAvailable()) {
@@ -156,37 +123,7 @@ function getPlugins(resolveDir: string | undefined, processEnv = process.env): E
     plugins.push(graphqlLoader())
   }
 
-  const skipReactDeduplication = isTruthy(processEnv[environmentVariableNames.skipEsbuildReactDedeuplication])
-  if (resolveDir && !skipReactDeduplication) {
-    let resolvedReactPath: string | undefined
-    try {
-      resolvedReactPath = require.resolve('react', {paths: [resolveDir]})
-      // eslint-disable-next-line no-catch-all/no-catch-all
-    } catch {
-      // If weren't able to find React, that's fine. It might not be used.
-      outputDebug(`Unable to load React in ${resolveDir}, skipping React de-duplication`)
-    }
-
-    if (resolvedReactPath) {
-      outputDebug(`Deduplicating React dependency for ${resolveDir}, using ${resolvedReactPath}`)
-      plugins.push(deduplicateReactPlugin(resolvedReactPath))
-    }
-  }
-
   return plugins
-}
-
-function deduplicateReactPlugin(resolvedReactPath: string): Plugin {
-  return {
-    name: 'shopify:deduplicate-react',
-    setup({onResolve}) {
-      onResolve({filter: /^react$/}, (args) => {
-        return {
-          path: resolvedReactPath,
-        }
-      })
-    },
-  }
 }
 
 /**

@@ -7,18 +7,6 @@
       {
         "type": "node",
         "request": "launch",
-        "name": "shopify theme {command}",
-        "cwd": "${workspaceFolder}",
-        "runtimeExecutable": "pnpm",
-        "runtimeArgs": [
-          "shopify",
-          "theme",
-          "${input:command}",
-        ],
-      },
-      {
-        "type": "node",
-        "request": "launch",
         "name": "shopify app build",
         "cwd": "${workspaceFolder}",
         "runtimeExecutable": "pnpm",
@@ -59,9 +47,8 @@
         "type": "node",
         "request": "launch",
         "name": "shopify app generate extension",
-        "runtimeExecutable": "pnpm",
+        "runtimeExecutable": "yarn",
         "runtimeArgs": [
-          "run",
           "shopify",
           "app",
           "generate",
@@ -87,11 +74,6 @@
         "default": ".",
       },
       {
-        "id": "command",
-        "type": "promptString",
-        "description": "Command: ",
-      },
-      {
         "id": "extensionName",
         "type": "promptString",
         "description": "Extension Name: ",
@@ -112,11 +94,7 @@
           "shipping_discounts",
           "payment_customization",
           "shipping_rate_presenter",
-          "delivery_customization",
-          "order_routing_location_rule",
-          "cart_transform",
-          "tax_calculation",
-          "fulfillment_constraints",
+          "delivery_customization"
         ],
         "default": "checkout_ui_extension",
     },

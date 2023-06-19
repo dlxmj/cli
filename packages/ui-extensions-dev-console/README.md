@@ -1,5 +1,4 @@
 # The extension dev console
-
 A tool for developing extensions locally.
 
 ## Local development
@@ -7,7 +6,8 @@ A tool for developing extensions locally.
 In terminal 1:
 
 1. `dev cd cli`
-2. `bin/create-test-app.js -e ui`
+2. `cd fixtures/app`
+3. `yarn dev`
 4. Copy the **Shopify extension dev console URL** e.g: `https://d1b8-2a09-bac1-14c0-188-00-b-224.ngrok.io/extensions/dev-console`
 
 In terminal 2:
@@ -27,3 +27,7 @@ If you want to see your changes on Shopify web:
 1. `dev cd cli`
 2. `cd packages/ui-extensions-dev-console`
 3. `yarn build`
+
+
+
+

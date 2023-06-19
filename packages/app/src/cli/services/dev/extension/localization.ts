@@ -1,10 +1,6 @@
 import {ExtensionAssetBuildStatus} from './payload/models.js'
-import {GetUIExtensionPayloadOptions} from './payload.js'
-import {ExtensionInstance} from '../../../models/extensions/extension-instance.js'
-import {joinPath} from '@shopify/cli-kit/node/path'
-import {readFile, glob} from '@shopify/cli-kit/node/fs'
-import {ExtendableError} from '@shopify/cli-kit/node/error'
-import {outputInfo, outputWarn} from '@shopify/cli-kit/node/output'
+import {UIExtension} from '../../../models/app/extensions.js'
+import {path, file, output} from '@shopify/cli-kit'
 
 export type Locale = string
 
@@ -17,14 +13,14 @@ export interface Localization {
   lastUpdated: number
 }
 
-export async function getLocalizationFilePaths(extension: ExtensionInstance): Promise<string[]> {
-  const localePath = joinPath(extension.directory, 'locales')
-  return glob([joinPath(localePath, '*.json')])
+export async function getLocalizationFilePaths(extension: UIExtension): Promise<string[]> {
+  const localePath = path.join(extension.directory, 'locales')
+  return path.glob([path.join(localePath, '*.json')])
 }
 
 export async function getLocalization(
-  extension: ExtensionInstance,
-  options: GetUIExtensionPayloadOptions,
+  extension: UIExtension,
+  currentLocalizattion?: Localization | null,
 ): Promise<{localization: Localization | undefined; status: ExtensionAssetBuildStatus}> {
   const localeFiles = await getLocalizationFilePaths(extension)
 
@@ -32,36 +28,38 @@ export async function getLocalization(
     return {localization: undefined, status: ''}
   }
 
-  const localization = options.currentLocalizationPayload
-    ? options.currentLocalizationPayload
+  const localization = currentLocalizattion
+    ? currentLocalizattion
     : ({
         defaultLocale: 'en',
         translations: {},
         lastUpdated: 0,
       } as Localization)
 
+  const compilingTranslations = []
+
+  for (const path of localeFiles) {
+    const [locale, ...fileNameSegments] = (path.split('/').pop() as string).split('.')
+
+    if (locale) {
+      if (fileNameSegments[0] === 'default') {
+        localization.defaultLocale = locale
+      }
+
+      compilingTranslations.push(compileLocalizationFiles(locale, path, localization, extension))
+    }
+  }
+
   let status: ExtensionAssetBuildStatus = 'success'
 
-  try {
-    await Promise.all(
-      localeFiles.map(async (localeFile) => {
-        const [locale, ...fileNameSegments] = (localeFile.split('/').pop() as string).split('.')
-
-        if (locale) {
-          if (fileNameSegments[0] === 'default') {
-            localization.defaultLocale = locale
-          }
-
-          return compileLocalizationFiles(locale, localeFile, localization, extension, options)
-        }
-      }),
-    )
-    localization.lastUpdated = Date.now()
-    outputInfo(`Parsed locales for extension ${extension.configuration.name} at ${extension.directory}`, options.stdout)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-catch-all/no-catch-all
-  } catch (error: any) {
-    status = 'error'
-  }
+  await Promise.all(compilingTranslations)
+    .then(async () => {
+      localization.lastUpdated = Date.now()
+      output.info(`Parsed locales for extension ${extension.configuration.name} at ${extension.directory}`)
+    })
+    .catch(() => {
+      status = 'error'
+    })
 
   return {
     localization,
@@ -73,17 +71,14 @@ async function compileLocalizationFiles(
   locale: string,
   path: string,
   localization: Localization,
-  extension: ExtensionInstance,
-  options: GetUIExtensionPayloadOptions,
+  extension: UIExtension,
 ): Promise<void> {
-  let localeContent: string | undefined
   try {
-    localeContent = await readFile(path)
-    localization.translations[locale] = JSON.parse(localeContent)
+    localization.translations[locale] = JSON.parse(await file.read(path))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     const message = `Error parsing ${locale} locale for ${extension.configuration.name} at ${path}: ${error.message}`
-    outputWarn(message, options.stderr)
-    throw new ExtendableError(message)
+    await output.warn(message)
+    throw new Error(message)
   }
 }

@@ -6,32 +6,31 @@ import {
   SetupWebSocketConnectionOptions,
 } from './models.js'
 import {RawData, WebSocket, WebSocketServer} from 'ws'
-import {outputDebug, outputContent, outputToken} from '@shopify/cli-kit/node/output'
-import {IncomingMessage} from 'http'
+import {http, output} from '@shopify/cli-kit'
 import {Duplex} from 'stream'
 
 export function websocketUpgradeHandler(
   wss: WebSocketServer,
   options: SetupWebSocketConnectionOptions,
-): (req: IncomingMessage, socket: Duplex, head: Buffer) => void {
+): (req: http.IncomingMessage, socket: Duplex, head: Buffer) => void {
   return (request, socket, head) => {
     if (request.url !== '/extensions') {
       return
     }
-    outputDebug(`Upgrading HTTP request to a websocket connection`, options.stdout)
+    output.debug(`Upgrading HTTP request to a websocket connection`)
     wss.handleUpgrade(request, socket, head, getConnectionDoneHandler(wss, options))
   }
 }
 
 export function getConnectionDoneHandler(wss: WebSocketServer, options: SetupWebSocketConnectionOptions) {
   return (ws: WebSocket) => {
-    outputDebug(`Websocket connection successfully established`, options.stdout)
+    output.debug(`Websocket connection successfully established`)
     const connectedPayload = {
       event: 'connected',
       data: options.payloadStore.getConnectedPayload(),
-      version: options.manifestVersion,
+      version: '3',
     }
-    outputDebug(outputContent`Sending connected payload: ${outputToken.json(connectedPayload)}`, options.stdout)
+    output.debug(output.content`Sending connected payload: ${output.token.json(connectedPayload)}`)
     ws.send(JSON.stringify(connectedPayload))
     ws.on('message', getOnMessageHandler(wss, options))
   }
@@ -42,12 +41,9 @@ export function getOnMessageHandler(wss: WebSocketServer, options: SetupWebSocke
     const jsonData = JSON.parse(data.toString())
     const {event: eventType, data: eventData} = jsonData
 
-    outputDebug(
-      outputContent`Received websocket message with event type ${eventType} and data:
-${outputToken.json(eventData)}
-          `,
-      options.stdout,
-    )
+    output.debug(output.content`Received websocket message with event type ${eventType} and data:
+${output.token.json(eventData)}
+          `)
 
     if (eventType === 'update') {
       const payloadStoreApiKey = options.payloadStore.getRawPayload().app.apiKey
@@ -70,7 +66,7 @@ ${outputToken.json(eventData)}
     } else if (eventType === 'dispatch') {
       const outGoingMessage = getOutgoingDispatchMessage(jsonData, options)
 
-      notifyClients(wss, outGoingMessage, options)
+      notifyClients(wss, outGoingMessage)
     }
   }
 }
@@ -82,28 +78,22 @@ export function getPayloadUpdateHandler(
   return (extensionIds: string[]) => {
     const payload = {
       event: EventType.Update,
-      version: options.manifestVersion,
+      version: '3',
       data: {
         ...options.payloadStore.getRawPayloadFilteredByExtensionIds(extensionIds),
       },
     }
-    outputDebug(
-      outputContent`Sending websocket update event to the websocket clients:
-  ${outputToken.json(payload)}
-    `,
-      options.stdout,
-    )
-    notifyClients(wss, payload, options)
+    output.debug(output.content`Sending websocket update event to the websocket clients:
+  ${output.token.json(payload)}
+    `)
+    notifyClients(wss, payload)
   }
 }
 
-function notifyClients(wss: WebSocketServer, payload: OutgoingMessage, options: SetupWebSocketConnectionOptions) {
-  outputDebug(
-    outputContent`Sending websocket with event type ${payload.event} and data:
-${outputToken.json(payload.data)}
-        `,
-    options.stdout,
-  )
+function notifyClients(wss: WebSocketServer, payload: OutgoingMessage) {
+  output.debug(output.content`Sending websocket with event type ${payload.event} and data:
+${output.token.json(payload.data)}
+        `)
 
   const stringPayload = JSON.stringify(payload)
   wss.clients.forEach((ws) => ws.send(stringPayload))
@@ -116,7 +106,7 @@ export function getOutgoingDispatchMessage(
   const extensionsPayload = options.payloadStore.getRawPayload()
   return {
     ...incomingMessage,
-    version: options.manifestVersion,
+    version: '3',
     data: {
       ...incomingMessage.data,
       extensions: [],

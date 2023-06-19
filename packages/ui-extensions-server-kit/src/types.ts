@@ -1,5 +1,4 @@
 /* eslint-disable @shopify/strict-component-boundaries */
-import {FlattenedLocalization, Localization} from './i18n'
 import './ExtensionServerClient/types'
 import type {Surface} from './ExtensionServerClient/types'
 
@@ -38,30 +37,6 @@ declare global {
       unfocus: void
       navigate: {url: string}
     }
-
-    // API responses
-    namespace API {
-      interface BaseResponse {
-        app: App
-        root: ResourceURL
-        socket: ResourceURL
-        devConsole: ResourceURL
-        store: string
-        version: string
-      }
-
-      interface ExtensionsResponse extends BaseResponse {
-        extensions: ExtensionPayload[]
-      }
-
-      interface ExtensionResponse extends BaseResponse {
-        extension: ExtensionPayload
-      }
-    }
-
-    interface UIExtension extends ExtensionPayload {
-      extensionPoints: ExtensionPoint[]
-    }
   }
 }
 
@@ -70,41 +45,25 @@ export type DeepPartial<T> = {
 }
 
 export interface ResourceURL {
-  url: string
-}
-
-export interface Asset extends ResourceURL {
   name: string
+  url: string
   lastUpdated: number
 }
-
-export interface Metafield {
-  namespace: string
-  key: string
-}
-
-export interface ExtensionPoint {
-  target: string
-  surface: Surface
-  metafields?: Metafield[]
-  resource: ResourceURL
-  root: ResourceURL
-  localization?: FlattenedLocalization | Localization | null
-  label?: string
-}
-
-export type ExtensionPoints = string[] | ExtensionPoint[] | null
 
 export interface ExtensionPayload {
   type: string
   externalType: string
-  assets: {[name: string]: Asset}
+  assets: {[name: string]: ResourceURL}
   development: {
     hidden: boolean
     status: Status
     focused?: boolean
-    resource: ResourceURL
-    root: ResourceURL
+    resource: {
+      url: string
+    }
+    root: {
+      url: string
+    }
     renderer: {
       name: string
       version: string
@@ -114,16 +73,13 @@ export interface ExtensionPayload {
   version: string
   surface: Surface
   title: string
-  extensionPoints: ExtensionPoints
+  extensionPoints?: string[]
   categories?: string[]
-  capabilities?: {
-    apiAccess: boolean
-    blockProgress: boolean
-    networkAccess: boolean
+  localization?: {
+    defaultLocale: string
+    lastUpdated: number
+    translations: {[locale: string]: ExtensionTranslationMap}
   }
-  authenticatedRedirectStartUrl?: string
-  authenticatedRedirectRedirectUrls?: string[]
-  localization?: FlattenedLocalization | Localization | null
 }
 
 export enum Status {
@@ -134,8 +90,6 @@ export enum Status {
 export interface App {
   id: string
   apiKey: string
-  url: string
-  mobileUrl: string
   applicationUrl: string
   handle?: string | null
   title: string
@@ -148,4 +102,8 @@ export interface App {
   }
   supportEmail?: string
   supportLocales?: string[]
+}
+
+interface ExtensionTranslationMap {
+  [key: string]: string
 }

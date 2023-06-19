@@ -1,45 +1,65 @@
 import {buildFunctionExtension} from './extension.js'
-import {testFunctionExtension} from '../../models/app/app.test-data.js'
-import {buildJSFunction} from '../function/build.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
-import {FunctionConfigType} from '../../models/extensions/specifications/function.js'
+import {FunctionExtension} from '../../models/app/extensions.js'
 import {beforeEach, describe, expect, test, vi} from 'vitest'
-import {exec} from '@shopify/cli-kit/node/system'
+import {system} from '@shopify/cli-kit'
 
-vi.mock('@shopify/cli-kit/node/system')
-vi.mock('../function/build.js')
+beforeEach(() => {
+  vi.mock('@shopify/cli-kit', async () => {
+    const cliKit: any = await vi.importActual('@shopify/cli-kit')
+    return {
+      ...cliKit,
+      system: {
+        exec: vi.fn(),
+      },
+    }
+  })
+})
 
 describe('buildFunctionExtension', () => {
-  let extension: ExtensionInstance<FunctionConfigType>
+  let extension: FunctionExtension
   let stdout: any
   let stderr: any
   let signal: any
   let app: any
-  const defaultConfig = {
-    name: 'MyFunction',
-    type: 'product_discounts',
-    description: '',
-    build: {
-      command: 'make build',
-      path: 'dist/index.wasm',
-    },
-    configurationUi: true,
-    apiVersion: '2022-07',
-    metafields: [],
-  }
 
-  beforeEach(async () => {
+  beforeEach(() => {
     stdout = vi.fn()
     stderr = {write: vi.fn()}
     stdout = {write: vi.fn()}
     signal = vi.fn()
     app = {}
-    extension = await testFunctionExtension({config: defaultConfig})
+    extension = {
+      configuration: {
+        name: 'MyFunction',
+        type: 'product_discounts',
+        description: '',
+        build: {
+          command: 'make build',
+        },
+        configurationUi: true,
+        apiVersion: '2022-07',
+      },
+      metadata: {
+        schemaVersions: {},
+      },
+      buildWasmPath: () => '/test/myfunction/dist/index.wasm',
+      inputQueryPath: () => '/test/myfunction/input.graphql',
+      publishURL: () => Promise.resolve(''),
+      graphQLType: 'product_discounts',
+      directory: '/test/myfunction',
+      configurationPath: '/test/myfunction/shopify.function.extension.toml',
+      idEnvironmentVariableName: 'MY_FUNCTION_ID',
+      localIdentifier: 'myfunction',
+      externalType: 'product_discounts',
+      type: 'product_discounts',
+    }
   })
 
   test('delegates the build to system when the build command is present', async () => {
     // Given
-    extension.configuration.build.command = './scripts/build.sh argument'
+    extension.configuration.build = {
+      command: './scripts/build.sh argument',
+    }
 
     // When
     await expect(
@@ -51,71 +71,7 @@ describe('buildFunctionExtension', () => {
       }),
     ).resolves.toBeUndefined()
 
-    // Then
-    expect(exec).toHaveBeenCalledWith('./scripts/build.sh', ['argument'], {
-      stdout,
-      stderr,
-      cwd: extension.directory,
-      signal,
-    })
-  })
-
-  test('fails when is not a JS function and build command is not present', async () => {
-    // Given
-    extension.configuration.build.command = undefined
-
-    // Then
-    await expect(
-      buildFunctionExtension(extension, {
-        stdout,
-        stderr,
-        signal,
-        app,
-      }),
-    ).rejects.toThrow()
-  })
-
-  test('succeeds when is a JS function and build command is not present', async () => {
-    // Given
-    extension = await testFunctionExtension({config: defaultConfig, entryPath: 'src/index.js'})
-    extension.configuration.build.command = undefined
-
-    // When
-    await expect(
-      buildFunctionExtension(extension, {
-        stdout,
-        stderr,
-        signal,
-        app,
-      }),
-    ).resolves.toBeUndefined()
-
-    // Then
-    expect(buildJSFunction).toHaveBeenCalledWith(extension, {
-      stdout,
-      stderr,
-      signal,
-      app,
-    })
-  })
-
-  test('succeeds when is a JS function and build command is present', async () => {
-    // Given
-    extension = await testFunctionExtension({config: defaultConfig, entryPath: 'src/index.js'})
-    extension.configuration.build.command = './scripts/build.sh argument'
-
-    // When
-    await expect(
-      buildFunctionExtension(extension, {
-        stdout,
-        stderr,
-        signal,
-        app,
-      }),
-    ).resolves.toBeUndefined()
-
-    // Then
-    expect(exec).toHaveBeenCalledWith('./scripts/build.sh', ['argument'], {
+    expect(system.exec).toHaveBeenCalledWith('./scripts/build.sh', ['argument'], {
       stdout,
       stderr,
       cwd: extension.directory,

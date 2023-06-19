@@ -1,18 +1,16 @@
 import {themeFlags} from '../../flags.js'
-import {ensureThemeStore} from '../../utilities/theme-store.js'
+import {getThemeStore} from '../../utilities/theme-store.js'
 import ThemeCommand from '../../utilities/theme-command.js'
-import {DevelopmentThemeManager} from '../../utilities/development-theme-manager.js'
 import {Flags} from '@oclif/core'
-import {globalFlags} from '@shopify/cli-kit/node/cli'
+import {cli, session} from '@shopify/cli-kit'
 import {execCLI2} from '@shopify/cli-kit/node/ruby'
-import {ensureAuthenticatedThemes} from '@shopify/cli-kit/node/session'
 
 export default class Push extends ThemeCommand {
   static description =
     'Uploads your local theme files to the connected store, overwriting the remote version if specified.'
 
   static flags = {
-    ...globalFlags,
+    ...cli.globalFlags,
     ...themeFlags,
     theme: Flags.string({
       char: 't',
@@ -80,40 +78,14 @@ export default class Push extends ThemeCommand {
     }),
   }
 
-  static cli2Flags = [
-    'theme',
-    'development',
-    'live',
-    'unpublished',
-    'nodelete',
-    'only',
-    'ignore',
-    'json',
-    'allow-live',
-    'publish',
-    'stable',
-    'force',
-    'development-theme-id',
-  ]
-
   async run(): Promise<void> {
     const {flags} = await this.parse(Push)
-    const store = ensureThemeStore(flags)
-    const adminSession = await ensureAuthenticatedThemes(store, flags.password)
 
-    const developmentThemeManager = new DevelopmentThemeManager(adminSession)
-    const theme = await (flags.development ? developmentThemeManager.findOrCreate() : developmentThemeManager.fetch())
-    if (theme) {
-      if (flags.development) {
-        flags.theme = `${theme.id}`
-        flags.development = false
-      }
-      flags['development-theme-id'] = theme.id
-    }
-
-    const flagsToPass = this.passThroughFlags(flags, {allowedFlags: Push.cli2Flags})
+    const flagsToPass = this.passThroughFlags(flags, {exclude: ['path', 'store', 'verbose', 'password']})
     const command = ['theme', 'push', flags.path, ...flagsToPass]
 
-    await execCLI2(command, {store, adminToken: adminSession.token})
+    const store = await getThemeStore(flags)
+    const adminSession = await session.ensureAuthenticatedThemes(store, flags.password)
+    await execCLI2(command, {adminSession})
   }
 }

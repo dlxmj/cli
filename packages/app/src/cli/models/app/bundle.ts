@@ -1,44 +1,44 @@
-import {zod} from '@shopify/cli-kit/node/schema'
+import {schema} from '@shopify/cli-kit'
 
-export const BundleUIExtensionSchema = zod.object({
+export const BundleUIExtensionSchema = schema.define.object({
   /** The extension UUID */
-  id: zod.string(),
+  id: schema.define.string(),
   /** The relative path to the Javascript bundle. */
-  bundlePath: zod.string(),
+  bundlePath: schema.define.string(),
 })
 
-export type BundleUIExtension = zod.infer<typeof BundleUIExtensionSchema>
+export type BundleUIExtension = schema.define.infer<typeof BundleUIExtensionSchema>
 
-export const BundleThemeExtensionSchema = zod.object({
+export const BundleThemeExtensionSchema = schema.define.object({
   /** The extension UUID */
-  id: zod.string(),
+  id: schema.define.string(),
   /** A list of paths to the files that are part of the schema. */
-  filePaths: zod.array(zod.string()),
+  filePaths: schema.define.array(schema.define.string()),
 })
 
-export type BundleThemeExtension = zod.infer<typeof BundleThemeExtensionSchema>
+export type BundleThemeExtension = schema.define.infer<typeof BundleThemeExtensionSchema>
 
-export const BundleFunctionExtensionSchema = zod.object({
+export const BundleFunctionExtensionSchema = schema.define.object({
   /** The extension UUID */
-  id: zod.string(),
+  id: schema.define.string(),
   /** The path to the .wasm file of the function. */
-  wasmPath: zod.string(),
+  wasmPath: schema.define.string(),
 })
 
-export type BundleFunctionExtension = zod.infer<typeof BundleFunctionExtensionSchema>
+export type BundleFunctionExtension = schema.define.infer<typeof BundleFunctionExtensionSchema>
 
-export const BundleSchema = zod.object({
+export const BundleSchema = schema.define.object({
   /** The application API key */
-  id: zod.string(),
+  id: schema.define.string(),
   /** The collection of extensions that are part of the bundle */
-  extensions: zod.object({
+  extensions: schema.define.object({
     /** UI extensions */
-    ui: zod.array(BundleUIExtensionSchema),
+    ui: schema.define.array(BundleUIExtensionSchema),
     /** Theme extensions */
-    theme: zod.array(BundleThemeExtensionSchema),
+    theme: schema.define.array(BundleThemeExtensionSchema),
     /** Function extensions */
-    function: zod.array(BundleFunctionExtensionSchema),
+    function: schema.define.array(BundleFunctionExtensionSchema),
   }),
 })
 
-export type Bundle = zod.infer<typeof BundleSchema>
+export type Bundle = schema.define.infer<typeof BundleSchema>

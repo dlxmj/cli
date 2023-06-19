@@ -1,20 +1,18 @@
 import {themeFlags} from '../flags.js'
-import {getThemeStore, setThemeStore} from '../services/local-storage.js'
-import {AbortError} from '@shopify/cli-kit/node/error'
-import {outputContent, outputToken} from '@shopify/cli-kit/node/output'
+import {store as conf, error, output} from '@shopify/cli-kit'
 
-export function ensureThemeStore(flags: {store: string | undefined}): string {
-  const store = flags.store || getThemeStore()
+export async function getThemeStore(flags: {store: string | undefined}): Promise<string> {
+  const store = flags.store || (await conf.getThemeStore())
   if (!store) {
-    throw new AbortError(
+    throw new error.Abort(
       'A store is required',
       `Specify the store passing ${
-        outputContent`${outputToken.genericShellCommand(`--${themeFlags.store.name}={your_store_url}`)}`.value
+        output.content`${output.token.genericShellCommand(`--${themeFlags.store.name}={your_store_url}`)}`.value
       } or set the ${
-        outputContent`${outputToken.genericShellCommand(themeFlags.store.env as string)}`.value
+        output.content`${output.token.genericShellCommand(themeFlags.store.env as string)}`.value
       } environment variable.`,
     )
   }
-  setThemeStore(store)
+  await conf.setThemeStore(store)
   return store
 }

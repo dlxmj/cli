@@ -1,11 +1,12 @@
+import * as styles from './theme.module.css'
 import React from 'react'
+import '@shopify/polaris/dist/styles.css'
+import enTranslations from '@shopify/polaris/locales/en.json'
+import {AppProvider} from '@shopify/polaris'
 import {I18nContext, I18nManager} from '@shopify/react-i18n'
 import {ExtensionServerProvider, isValidSurface} from '@shopify/ui-extensions-server-kit'
-import {Layout} from '@/foundation/Layout'
-import {Routes} from '@/foundation/Routes'
-import {Toast} from '@/foundation/Toast'
-import {Theme} from '@/foundation/Theme'
-import {ModalContainer} from '@/foundation/ModalContainer'
+import Layout from '@/Layout/Layout'
+import Routes from '@/Routes'
 
 function getConnectionUrl() {
   if (import.meta.env.VITE_CONNECTION_URL) {
@@ -25,27 +26,27 @@ const extensionServerOptions = {
   surface: isValidSurface(surface) ? surface : undefined,
 }
 
+const locale = 'en'
 const i18nManager = new I18nManager({
-  locale: 'en',
+  locale,
   onError(error) {
     // eslint-disable-next-line no-console
     console.log(error)
   },
 })
-
 function App() {
   return (
-    <ExtensionServerProvider options={extensionServerOptions}>
-      <I18nContext.Provider value={i18nManager}>
-        <Theme>
-          <Layout>
-            <Routes />
-            <Toast />
-            <ModalContainer />
-          </Layout>
-        </Theme>
-      </I18nContext.Provider>
-    </ExtensionServerProvider>
+    <div className={styles.Theme}>
+      <ExtensionServerProvider options={extensionServerOptions}>
+        <I18nContext.Provider value={i18nManager}>
+          <AppProvider i18n={enTranslations}>
+            <Layout>
+              <Routes />
+            </Layout>
+          </AppProvider>
+        </I18nContext.Provider>
+      </ExtensionServerProvider>
+    </div>
   )
 }
 

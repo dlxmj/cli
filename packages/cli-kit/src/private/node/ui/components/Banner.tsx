@@ -1,15 +1,14 @@
-import useLayout from '../hooks/use-layout.js'
-import {Link, LinksContext} from '../contexts/LinksContext.js'
-import {Box, Text} from 'ink'
-import React, {FunctionComponent, useContext, useRef} from 'react'
+import {Box, Text, useStdout} from 'ink'
+import React from 'react'
 
 export type BannerType = 'success' | 'error' | 'warning' | 'info' | 'external_error'
 
-interface BannerProps {
+interface Props {
   type: BannerType
+  marginY?: number
 }
 
-function typeToColor(type: BannerProps['type']) {
+function typeToColor(type: Props['type']) {
   return {
     success: 'green',
     error: 'red',
@@ -19,93 +18,79 @@ function typeToColor(type: BannerProps['type']) {
   }[type]
 }
 
-const Footnotes = () => {
-  const linksContext = useContext(LinksContext)
+const BANNER_MIN_WIDTH = 80
 
-  if (linksContext === null || linksContext.links.current === null) {
-    return null
+function calculateWidth(stdout: NodeJS.WriteStream | undefined) {
+  const fullWidth = stdout?.columns ?? BANNER_MIN_WIDTH
+  const twoThirdsOfWidth = Math.floor((fullWidth / 3) * 2)
+  let width
+
+  if (fullWidth <= BANNER_MIN_WIDTH) {
+    width = fullWidth
+  } else if (twoThirdsOfWidth < BANNER_MIN_WIDTH) {
+    width = BANNER_MIN_WIDTH
+  } else {
+    width = twoThirdsOfWidth
   }
 
-  const links = linksContext.links.current
-  const linkIds = Object.keys(links)
-
-  return linkIds.length > 0 ? (
-    <Box marginBottom={1} marginTop={-1} flexDirection="column">
-      {linkIds.map((id) => (
-        <Text key={id}>{`[${id}] ${links[id]?.url}`}</Text>
-      ))}
-    </Box>
-  ) : null
+  return width
 }
 
-const BoxWithBorder: FunctionComponent<BannerProps> = ({type, children}) => {
-  const {twoThirds} = useLayout()
-  const links = useRef<{[key: string]: Link}>({})
+const BoxWithBorder: React.FC<Props> = ({type, marginY, children}) => {
+  const {stdout} = useStdout()
 
   return (
-    <LinksContext.Provider
-      value={{
-        links,
-        addLink: (label, url) => {
-          const id: string | undefined = Object.keys(links.current).find((id) => links.current[id]!.url === url)
-          if (id) {
-            return id
-          }
-          const newId = (Object.keys(links.current).length + 1).toString()
-          links.current = {
-            ...links.current,
-            [newId]: {label, url},
-          }
-          return newId
-        },
-      }}
+    <Box
+      width={calculateWidth(stdout)}
+      paddingY={1}
+      paddingX={2}
+      marginY={marginY}
+      borderStyle="round"
+      flexDirection="column"
+      borderColor={typeToColor(type)}
     >
-      <Box
-        width={twoThirds}
-        marginBottom={1}
-        borderStyle="round"
-        flexDirection="column"
-        borderColor={typeToColor(type)}
-      >
-        <Box marginTop={-1} marginLeft={1}>
-          <Text>{` ${type.replace(/_/g, ' ')} `}</Text>
-        </Box>
-        <Box flexDirection="column" paddingY={1} paddingX={2} gap={1}>
-          {children}
-        </Box>
+      <Box marginTop={-2} marginBottom={1} marginLeft={-1}>
+        <Text dimColor bold>{` ${type.replace(/_/g, ' ')} `}</Text>
       </Box>
-      <Footnotes />
-    </LinksContext.Provider>
+      {children}
+    </Box>
   )
 }
 
-const BoxWithTopBottomLines: FunctionComponent<BannerProps> = ({type, children}) => {
-  const {twoThirds} = useLayout()
-  // 2 initial dashes + 2 spaces surrounding the type
-  let topLineAfterTypeLength = twoThirds - 2 - type.length - 2
-  if (topLineAfterTypeLength < 0) topLineAfterTypeLength = 0
+const BoxWithTopLine: React.FC<Props> = ({type, marginY, children}) => {
+  const {stdout} = useStdout()
+  const width = calculateWidth(stdout)
 
   return (
-    <Box flexDirection="column" marginBottom={1} gap={1}>
-      <Text>
-        <Text color={typeToColor(type)}>{'─'.repeat(2)}</Text>
-        <Text>{` ${type.replace(/_/g, ' ')} `}</Text>
-        <Text color={typeToColor(type)}>{'─'.repeat(topLineAfterTypeLength)}</Text>
-      </Text>
+    <Box marginY={marginY} flexDirection="column">
+      <Box marginBottom={1}>
+        <Text>
+          <Text color={typeToColor(type)}>{'─'.repeat(2)}</Text>
+          <Text dimColor bold>{` ${type.replace(/_/g, ' ')} `}</Text>
+          {/* 2 initial dashes + 2 spaces surrounding the type */}
+          <Text color={typeToColor(type)}>{'─'.repeat(width - 2 - type.length - 2)}</Text>
+        </Text>
+      </Box>
 
       {children}
 
-      <Text color={typeToColor(type)}>{'─'.repeat(twoThirds)}</Text>
+      <Box marginTop={1}>
+        <Text color={typeToColor(type)}>{'─'.repeat(width)}</Text>
+      </Box>
     </Box>
   )
 }
 
-const Banner: FunctionComponent<BannerProps> = ({children, ...props}) => {
+const BannerBox: React.FC<Props> = ({children, ...props}) => {
   if (props.type === 'external_error') {
-    return React.createElement(BoxWithTopBottomLines, props, children)
-  } else {
-    return React.createElement(BoxWithBorder, props, children)
+    return <BoxWithTopLine {...props}>{children}</BoxWithTopLine>
   }
+
+  return <BoxWithBorder {...props}>{children}</BoxWithBorder>
+}
+
+const Banner: React.FC<Props> = ({children, ...props}) => {
+  return <BannerBox {...props}>{children}</BannerBox>
 }
 
 export {Banner}

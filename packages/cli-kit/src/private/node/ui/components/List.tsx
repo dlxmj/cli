@@ -1,13 +1,11 @@
-import {InlineToken, TokenItem, TokenizedText} from './TokenizedText.js'
-import {Box, Text, TextProps} from 'ink'
-import React, {FunctionComponent} from 'react'
+import {TokenItem, TokenizedText} from './TokenizedText.js'
+import {Box, Text} from 'ink'
+import React from 'react'
 
-interface ListProps {
-  title?: TokenItem<InlineToken>
-  items: TokenItem<InlineToken>[]
+interface Props {
+  title: string
+  items: TokenItem[]
   ordered?: boolean
-  margin?: boolean
-  color?: TextProps['color']
 }
 
 const DOT = '•'
@@ -16,22 +14,18 @@ const DOT = '•'
  * `List` displays an unordered or ordered list with text aligned with the bullet point
  * and wrapped to the container width.
  */
-const List: FunctionComponent<ListProps> = ({title, items, margin = true, ordered = false, color}): JSX.Element => {
+const List: React.FC<Props> = ({title, items, ordered = false}: React.PropsWithChildren<Props>): JSX.Element => {
   return (
     <Box flexDirection="column">
-      {title ? (
-        <Text color={color}>
-          <TokenizedText item={title} />
-        </Text>
-      ) : null}
+      <Text dimColor>{title}</Text>
       {items.map((item, index) => (
-        <Box key={index} marginLeft={margin ? 2 : 0}>
-          <Text color={color}>{`${ordered ? `${index + 1}.` : DOT}`}</Text>
+        <Box key={index}>
+          <Box>
+            <Text dimColor>{`  ${ordered ? `${index + 1}.` : DOT}`}</Text>
+          </Box>
 
           <Box flexGrow={1} marginLeft={1}>
-            <Text color={color}>
-              <TokenizedText item={item} />
-            </Text>
+            <TokenizedText item={item} />
           </Box>
         </Box>
       ))}

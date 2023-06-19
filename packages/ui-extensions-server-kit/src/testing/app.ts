@@ -6,8 +6,6 @@ export function mockApp(): App {
     apiKey: '12345',
     applicationUrl: 'www.applicationUrl.com',
     title: 'App title',
-    url: 'mock url',
-    mobileUrl: 'mock mobile url',
     icon: {
       transformedSrc: 'www.transformed-src.com',
     },

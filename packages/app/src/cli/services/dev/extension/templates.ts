@@ -1,7 +1,4 @@
-import {renderLiquidTemplate} from '@shopify/cli-kit/node/liquid'
-import {joinPath, moduleDirectory} from '@shopify/cli-kit/node/path'
-import {readFile, glob, findPathUp} from '@shopify/cli-kit/node/fs'
-import {BugError} from '@shopify/cli-kit/node/error'
+import {path, template, file, error} from '@shopify/cli-kit'
 
 export interface GetHTMLOptions {
   extensionSurface?: string
@@ -12,7 +9,7 @@ export interface GetHTMLOptions {
 
 export type Template = 'index' | 'tunnel-error' | 'error'
 
-export class TemplateNotFoundError extends BugError {
+export class TemplateNotFoundError extends error.Bug {
   constructor(options: GetHTMLOptions) {
     super(`Couldn't find template ${options.template} for extension surface ${options.extensionSurface}`)
   }
@@ -20,18 +17,18 @@ export class TemplateNotFoundError extends BugError {
 
 export async function getHTML(options: GetHTMLOptions): Promise<string> {
   const templatePath = await getTemplatePath(options)
-  const templateContent = await readFile(templatePath)
-  return renderLiquidTemplate(templateContent, options.data)
+  const templateContent = await file.read(templatePath)
+  return template.create(templateContent)(options.data)
 }
 
 export async function getTemplatePath(options: GetHTMLOptions): Promise<string> {
   const templatesDirectory = await getTemplatesDirectory()
   const globPatterns = []
   if (options.extensionSurface) {
-    globPatterns.push(joinPath(templatesDirectory, `${options.extensionSurface}/${options.template}.html.liquid`))
+    globPatterns.push(path.join(templatesDirectory, `${options.extensionSurface}/${options.template}.html.liquid`))
   }
-  globPatterns.push(joinPath(templatesDirectory, `${options.template}.html.liquid`))
-  const globMatches = await glob(globPatterns)
+  globPatterns.push(path.join(templatesDirectory, `${options.template}.html.liquid`))
+  const globMatches = await path.glob(globPatterns)
   if (globMatches.length === 0) {
     throw new TemplateNotFoundError(options)
   }
@@ -39,9 +36,9 @@ export async function getTemplatePath(options: GetHTMLOptions): Promise<string> 
 }
 
 export async function getTemplatesDirectory(): Promise<string> {
-  const directory = await findPathUp('templates/ui-extensions/html', {
+  const directory = await path.findUp('templates/ui-extensions/html', {
     type: 'directory',
-    cwd: moduleDirectory(import.meta.url),
+    cwd: path.moduleDirectory(import.meta.url),
   })
   return directory as string
 }

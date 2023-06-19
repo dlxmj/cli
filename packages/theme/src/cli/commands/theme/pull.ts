@@ -1,17 +1,15 @@
 import {themeFlags} from '../../flags.js'
-import {ensureThemeStore} from '../../utilities/theme-store.js'
+import {getThemeStore} from '../../utilities/theme-store.js'
 import ThemeCommand from '../../utilities/theme-command.js'
-import {DevelopmentThemeManager} from '../../utilities/development-theme-manager.js'
 import {Flags} from '@oclif/core'
-import {globalFlags} from '@shopify/cli-kit/node/cli'
+import {cli, path, session} from '@shopify/cli-kit'
 import {execCLI2} from '@shopify/cli-kit/node/ruby'
-import {ensureAuthenticatedThemes} from '@shopify/cli-kit/node/session'
 
 export default class Pull extends ThemeCommand {
   static description = 'Download your remote theme files locally.'
 
   static flags = {
-    ...globalFlags,
+    ...cli.globalFlags,
     ...themeFlags,
     theme: Flags.string({
       char: 't',
@@ -53,26 +51,20 @@ export default class Pull extends ThemeCommand {
     }),
   }
 
-  static cli2Flags = ['theme', 'development', 'live', 'nodelete', 'only', 'ignore', 'force', 'development-theme-id']
-
   async run(): Promise<void> {
     const {flags} = await this.parse(Pull)
-    const store = ensureThemeStore(flags)
-    const adminSession = await ensureAuthenticatedThemes(store, flags.password)
 
-    const developmentThemeManager = new DevelopmentThemeManager(adminSession)
-    const theme = await (flags.development ? developmentThemeManager.find() : developmentThemeManager.fetch())
-    if (theme) {
-      if (flags.development) {
-        flags.theme = `${theme.id}`
-        flags.development = false
-      }
-      flags['development-theme-id'] = theme.id
+    let validPath = flags.path
+    if (!path.isAbsolute(validPath)) {
+      validPath = path.resolve(flags.path)
     }
 
-    const flagsToPass = this.passThroughFlags(flags, {allowedFlags: Pull.cli2Flags})
-    const command = ['theme', 'pull', flags.path, ...flagsToPass]
+    const flagsToPass = this.passThroughFlags(flags, {exclude: ['path', 'verbose', 'store', 'password']})
 
-    await execCLI2(command, {store, adminToken: adminSession.token})
+    const command = ['theme', 'pull', validPath, ...flagsToPass]
+
+    const store = await getThemeStore(flags)
+    const adminSession = await session.ensureAuthenticatedThemes(store, flags.password)
+    await execCLI2(command, {adminSession})
   }
 }

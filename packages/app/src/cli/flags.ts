@@ -1,5 +1,5 @@
 import {Flags} from '@oclif/core'
-import {resolvePath, cwd} from '@shopify/cli-kit/node/path'
+import {path} from '@shopify/cli-kit'
 
 /**
  * An object that contains the flags that
@@ -7,15 +7,9 @@ import {resolvePath, cwd} from '@shopify/cli-kit/node/path'
  */
 export const appFlags = {
   path: Flags.string({
+    hidden: false,
     description: 'The path to your app directory.',
-    parse: async (input) => resolvePath(input),
-    default: async () => cwd(),
+    parse: (input, _) => Promise.resolve(path.resolve(input)),
     env: 'SHOPIFY_FLAG_PATH',
-  }),
-  environment: Flags.string({
-    hidden: true,
-    char: 'e',
-    description: 'The environment to apply to the current command.',
-    env: 'SHOPIFY_FLAG_ENVIRONMENT',
   }),
 }

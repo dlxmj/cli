@@ -2,12 +2,13 @@ import {getExtensionPointRedirectUrl, getExtensionUrl, getRedirectUrl, sendError
 import {GetExtensionsMiddlewareOptions} from './models.js'
 import {getUIExtensionPayload} from '../payload.js'
 import {getHTML} from '../templates.js'
-import {fileExists, isDirectory, readFile, findPathUp} from '@shopify/cli-kit/node/fs'
-import {IncomingMessage, ServerResponse, sendRedirect, send} from 'h3'
-import {joinPath, extname, moduleDirectory} from '@shopify/cli-kit/node/path'
-import {outputDebug} from '@shopify/cli-kit/node/output'
+import {file, http, output, path} from '@shopify/cli-kit'
 
-export function corsMiddleware(request: IncomingMessage, response: ServerResponse, next: (err?: Error) => unknown) {
+export function corsMiddleware(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  next: (err?: Error) => unknown,
+) {
   response.setHeader('Access-Control-Allow-Origin', '*')
   response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   response.setHeader(
@@ -17,38 +18,42 @@ export function corsMiddleware(request: IncomingMessage, response: ServerRespons
   next()
 }
 
-export function noCacheMiddleware(request: IncomingMessage, response: ServerResponse, next: (err?: Error) => unknown) {
+export function noCacheMiddleware(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  next: (err?: Error) => unknown,
+) {
   response.setHeader('Cache-Control', 'no-cache')
   next()
 }
 
 export async function redirectToDevConsoleMiddleware(
-  request: IncomingMessage,
-  response: ServerResponse,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
   next: (err?: Error) => unknown,
 ) {
-  await sendRedirect(response.event, '/extensions/dev-console', 307)
+  await http.sendRedirect(response.event, '/extensions/dev-console', 307)
 }
 
 export async function fileServerMiddleware(
-  request: IncomingMessage,
-  response: ServerResponse,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
   next: (err?: Error) => unknown,
   options: {filePath: string},
 ) {
   let {filePath} = options
 
-  if (await isDirectory(filePath)) {
+  if (await file.isDirectory(filePath)) {
     filePath += filePath.endsWith('/') ? `index.html` : '/index.html'
   }
 
-  const exists = await fileExists(filePath)
+  const fileExists = await file.exists(filePath)
 
-  if (!exists) {
+  if (!fileExists) {
     return sendError(response, {statusCode: 404, statusMessage: `Not Found: ${filePath}`})
   }
 
-  const fileContent = await readFile(filePath)
+  const fileContent = await file.read(filePath)
   const extensionToContent = {
     '.ico': 'image/x-icon',
     '.html': 'text/html',
@@ -57,7 +62,6 @@ export async function fileServerMiddleware(
     '.css': 'text/css',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
     '.wav': 'audio/wav',
     '.mp3': 'audio/mpeg',
     '.svg': 'image/svg+xml',
@@ -65,7 +69,7 @@ export async function fileServerMiddleware(
     '.doc': 'application/msword',
   } as const
 
-  const extensionName = extname(filePath) as keyof typeof extensionToContent
+  const extensionName = path.extname(filePath) as keyof typeof extensionToContent
   const contentType = extensionToContent[extensionName] || 'text/plain'
 
   response.setHeader('Content-Type', contentType)
@@ -74,7 +78,7 @@ export async function fileServerMiddleware(
 }
 
 export function getExtensionAssetMiddleware({devOptions}: GetExtensionsMiddlewareOptions) {
-  return async (request: IncomingMessage, response: ServerResponse, next: (err?: Error) => unknown) => {
+  return async (request: http.IncomingMessage, response: http.ServerResponse, next: (err?: Error) => unknown) => {
     const {extensionId, assetPath} = request.context.params
     const extension = devOptions.extensions.find((extension) => extension.devUUID === extensionId)
 
@@ -85,29 +89,29 @@ export function getExtensionAssetMiddleware({devOptions}: GetExtensionsMiddlewar
       })
     }
 
-    const buildDirectory = extension.outputPath.replace('main.js', '')
+    const buildDirectory = extension.outputBundlePath.replace('main.js', '')
 
     return fileServerMiddleware(request, response, next, {
-      filePath: joinPath(buildDirectory, assetPath),
+      filePath: path.join(buildDirectory, assetPath),
     })
   }
 }
 
 export function getExtensionsPayloadMiddleware({payloadStore}: GetExtensionsMiddlewareOptions) {
-  return async (request: IncomingMessage, response: ServerResponse, next: (err?: Error) => unknown) => {
+  return async (request: http.IncomingMessage, response: http.ServerResponse, next: (err?: Error) => unknown) => {
     response.setHeader('content-type', 'application/json')
     response.end(JSON.stringify(payloadStore.getRawPayload()))
   }
 }
 
 export async function devConsoleIndexMiddleware(
-  request: IncomingMessage,
-  response: ServerResponse,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
   next: (err?: Error) => unknown,
 ) {
-  const rootDirectory = await findPathUp(joinPath('assets', 'dev-console'), {
+  const rootDirectory = await path.findUp(path.join('assets', 'dev-console'), {
     type: 'directory',
-    cwd: moduleDirectory(import.meta.url),
+    cwd: path.moduleDirectory(import.meta.url),
   })
 
   if (!rootDirectory) {
@@ -123,15 +127,15 @@ export async function devConsoleIndexMiddleware(
 }
 
 export async function devConsoleAssetsMiddleware(
-  request: IncomingMessage,
-  response: ServerResponse,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
   next: (err?: Error) => unknown,
 ) {
   const {assetPath} = request.context.params
 
-  const rootDirectory = await findPathUp(joinPath('assets', 'dev-console', 'extensions', 'dev-console', 'assets'), {
+  const rootDirectory = await path.findUp(path.join('assets', 'dev-console', 'extensions', 'dev-console', 'assets'), {
     type: 'directory',
-    cwd: moduleDirectory(import.meta.url),
+    cwd: path.moduleDirectory(import.meta.url),
   })
 
   if (!rootDirectory) {
@@ -142,19 +146,21 @@ export async function devConsoleAssetsMiddleware(
   }
 
   return fileServerMiddleware(request, response, next, {
-    filePath: joinPath(rootDirectory, assetPath),
+    filePath: path.join(rootDirectory, assetPath),
   })
 }
 
 export function getLogMiddleware({devOptions}: GetExtensionsMiddlewareOptions) {
-  return async (request: IncomingMessage, response: ServerResponse, next: (err?: Error) => unknown) => {
-    outputDebug(`UI extensions server received a ${request.method} request to URL ${request.url}`, devOptions.stdout)
+  return async (request: http.IncomingMessage, response: http.ServerResponse, next: (err?: Error) => unknown) => {
+    output.debug(`UI extensions server received a ${request.method} request to URL ${request.url}`, (message) =>
+      devOptions.stdout.write(message, 'utf8'),
+    )
     next()
   }
 }
 
 export function getExtensionPayloadMiddleware({devOptions}: GetExtensionsMiddlewareOptions) {
-  return async (request: IncomingMessage, response: ServerResponse, next: (err?: Error) => unknown) => {
+  return async (request: http.IncomingMessage, response: http.ServerResponse, next: (err?: Error) => unknown) => {
     const extensionID = request.context.params.extensionId
     const extension = devOptions.extensions.find((extension) => extension.devUUID === extensionID)
 
@@ -166,19 +172,21 @@ export function getExtensionPayloadMiddleware({devOptions}: GetExtensionsMiddlew
     }
 
     if (request.headers.accept?.startsWith('text/html')) {
-      if (extension.type === 'checkout_post_purchase') {
+      const extensionSurface = extension.surface
+
+      if (extensionSurface === 'post_purchase') {
         const body = await getHTML({
           data: {
             url: getExtensionUrl(extension, devOptions),
           },
           template: 'index',
-          extensionSurface: 'post_purchase',
+          extensionSurface,
         })
-        await send(response.event, body)
+        await http.send(response.event, body)
         return
       } else {
         const url = getRedirectUrl(extension, devOptions)
-        await sendRedirect(response.event, url, 307)
+        await http.sendRedirect(response.event, url, 307)
         return
       }
     }
@@ -189,7 +197,7 @@ export function getExtensionPayloadMiddleware({devOptions}: GetExtensionsMiddlew
         app: {
           apiKey: devOptions.apiKey,
         },
-        version: devOptions.manifestVersion,
+        version: '3',
         root: {
           url: new URL('/extensions', devOptions.url).toString(),
         },
@@ -207,7 +215,7 @@ export function getExtensionPayloadMiddleware({devOptions}: GetExtensionsMiddlew
 }
 
 export function getExtensionPointMiddleware({devOptions}: GetExtensionsMiddlewareOptions) {
-  return async (request: IncomingMessage, response: ServerResponse, _next: (err?: Error) => unknown) => {
+  return async (request: http.IncomingMessage, response: http.ServerResponse, _next: (err?: Error) => unknown) => {
     const extensionID = request.context.params.extensionId
     const requestedTarget = request.context.params.extensionPointTarget
     const extension = devOptions.extensions.find((extension) => extension.devUUID === extensionID)
@@ -234,7 +242,7 @@ export function getExtensionPointMiddleware({devOptions}: GetExtensionsMiddlewar
       })
     }
 
-    await sendRedirect(response.event, url, 307)
+    await http.sendRedirect(response.event, url, 307)
   }
 }
 

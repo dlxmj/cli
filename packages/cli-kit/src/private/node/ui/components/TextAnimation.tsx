@@ -1,49 +1,69 @@
-/* eslint-disable id-length */
+import {renderString} from '../../ui.js'
+import chalkAnimation from 'chalk-animation'
 import {Text} from 'ink'
-import React, {memo, useCallback, useLayoutEffect, useRef, useState} from 'react'
-import gradient from 'gradient-string'
+import React, {useEffect, useState} from 'react'
 
-interface TextAnimationProps {
-  text: string
+type AnimationName = 'rainbow' | 'pulse' | 'glitch' | 'radar' | 'neon' | 'karaoke'
+
+interface Props {
+  name?: AnimationName
+  speed?: number
 }
 
-function rainbow(text: string, frame: number) {
-  const hue = 5 * frame
-  const leftColor = {h: hue % 360, s: 0.8, v: 1}
-  const rightColor = {h: (hue + 1) % 360, s: 0.8, v: 1}
-  return gradient(leftColor, rightColor)(text, {interpolation: 'hsv', hsvSpin: 'long'})
+const delays: {[key in AnimationName]: number} = {
+  rainbow: 15,
+  pulse: 16,
+  glitch: 55,
+  radar: 50,
+  neon: 500,
+  karaoke: 50,
 }
 
 /**
- * `TextAnimation` applies a rainbow animation to text.
+ * `TextAnimation` applies animations from [chalk-animation](https://github.com/bokub/chalk-animation) to `Text` Children
  */
-const TextAnimation = memo(({text}: TextAnimationProps): JSX.Element => {
-  const frame = useRef(0)
-  const [renderedFrame, setRenderedFrame] = useState(text)
-  const timeout = useRef<NodeJS.Timeout>()
+const TextAnimation: React.FC<Props> = ({
+  name = 'rainbow',
+  speed = 1,
+  children,
+}: React.PropsWithChildren<Props>): JSX.Element => {
+  const [animationTimeout, setAnimationTimeout] = useState<NodeJS.Timeout | null>(null)
+  const animation = chalkAnimation[name]('').stop()
+  const [frame, setFrame] = useState('')
 
-  const renderAnimation = useCallback(() => {
-    const newFrame = frame.current + 1
-    frame.current = newFrame
+  const start = () => {
+    const {output} = renderString(<Text>{children}</Text>)
 
-    setRenderedFrame(rainbow(text, frame.current))
+    // There's probably some clashing between `chalk-animation` and Ink's rendering mechanism
+    // (which uses `log-update`). The solution is to remove the ANSI escape sequence at the
+    // start of the frame that we're getting from `chalk-animation` that tells the terminal to
+    // clear the lines.
 
-    timeout.current = setTimeout(() => {
-      renderAnimation()
-    }, 35)
-  }, [text])
+    const frame = animation
+      .replace(output ?? '')
+      .frame()
+      .replace(/^\u001B\[(\d)F\u001B\[G\u001B\[2K/, '') // eslint-disable-line no-control-regex
 
-  useLayoutEffect(() => {
-    renderAnimation()
+    setFrame(frame)
+
+    setAnimationTimeout(
+      setTimeout(() => {
+        start()
+      }, delays[name] / speed),
+    )
+  }
+
+  useEffect(() => {
+    start()
 
     return () => {
-      clearTimeout(timeout.current)
+      if (animationTimeout) clearTimeout(animationTimeout)
+
+      setAnimationTimeout(null)
     }
-  }, [renderAnimation])
+  }, [])
 
-  return <Text>{renderedFrame}</Text>
-})
-
-TextAnimation.displayName = 'TextAnimation'
+  return <Text>{frame}</Text>
+}
 
 export {TextAnimation}

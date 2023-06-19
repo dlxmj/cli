@@ -1,6 +1,6 @@
 import {executables} from '../lib/constants'
 import {exec} from '../lib/system'
-import * as path from 'pathe'
+import path from 'pathe'
 import {When, Then} from '@cucumber/cucumber'
 import fs from 'fs-extra'
 import {strict as assert} from 'assert'
@@ -99,7 +99,7 @@ Then(
 
 Then(/The extension named (.+) contains the theme extension directories/, {}, async function (appName: string) {
   const appInfo = await this.appInfo()
-  const extension = appInfo.allExtensions.find((extension: {configuration: ExtensionConfiguration}) => {
+  const extension = appInfo.extensions.theme.find((extension: {configuration: ExtensionConfiguration}) => {
     return extension.configuration.name === appName
   })
   if (!extension) assert.fail(`Extension not created! Config:\n${JSON.stringify(appInfo, null, 2)}`)

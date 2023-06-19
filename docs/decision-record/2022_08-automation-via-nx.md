@@ -5,7 +5,7 @@
 ```json
 {
   "scripts": {
-    "build": "pnpm clean && tsc",
+    "build": "yarn clean && tsc",
     "clean": "rm -rf dist/"
   }
 }

@@ -1,98 +1,98 @@
 import en from './translations/en.json'
 import * as styles from './QRCodeModal.module.scss'
-import {useApp} from '../../hooks/useApp'
 import React, {useCallback, useMemo} from 'react'
+import {CircleAlertMajor, DuplicateMinor} from '@shopify/polaris-icons'
+import {Button, Icon, Modal, ModalProps, Stack} from '@shopify/polaris'
 import {useI18n} from '@shopify/react-i18n'
 import copyToClipboard from 'copy-to-clipboard'
 import QRCode from 'qrcode.react'
-import {toast} from 'react-toastify'
-import {Surface} from '@shopify/ui-extensions-server-kit'
-import {ClipboardMinor} from '@shopify/polaris-icons'
-import {Modal, ModalProps} from '@/components/Modal'
-import {IconButton} from '@/components/IconButton'
+import {ExtensionPayload} from '@shopify/ui-extensions-server-kit'
+import {useExtensionsInternal} from '@/sections/Extensions/hooks/useExtensionsInternal'
+import {useToast} from '@/hooks/useToast'
 
-interface Code {
-  url: string
-  title: string
-  type: Surface | 'home'
+export interface QRCodeModalProps extends Pick<ModalProps, 'open' | 'onClose'> {
+  extension?: ExtensionPayload
 }
 
-export interface QRCodeModalProps extends Pick<ModalProps, 'onClose'> {
-  code?: Code
-}
-
-export function QRCodeModal({code, onClose}: QRCodeModalProps) {
+export function QRCodeModal({extension, open, onClose}: QRCodeModalProps) {
   const [i18n] = useI18n({
     id: 'QRCodeModal',
     fallback: en,
   })
 
   return (
-    <Modal title={i18n.translate('title', {title: code?.title})} open={Boolean(code)} onClose={onClose} width="small">
-      {code ? <QRCodeContent {...code} /> : null}
+    <Modal title={i18n.translate('title')} titleHidden open={open} onClose={onClose} sectioned small noScroll>
+      <QRCodeContent extension={extension} />
     </Modal>
   )
 }
 
-export function QRCodeContent({url, type}: Code) {
+export function QRCodeContent(props: Pick<QRCodeModalProps, 'extension'>) {
   const [i18n] = useI18n({
     id: 'QRCodeModal',
     fallback: en,
   })
+  const {extension} = props
+  const {state} = useExtensionsInternal()
 
-  const {store, app} = useApp()
+  const showToast = useToast()
 
-  const qrCodeURL = useMemo(() => {
-    // The Websocket hasn't loaded data yet.
-    // Shouldn't happen since you can't open modal without data,
-    // but just in case.
-    if (!app) {
-      return null
+  const mobileQRCode = useMemo(() => {
+    if (!state.app || !extension) {
+      return undefined
     }
 
-    // View a POS extension in POS app
-    if (type === 'point_of_sale') {
-      return `com.shopify.pos://pos-ui-extensions?url=${url}`
+    if (extension.surface === 'pos') {
+      return `com.shopify.pos://pos-ui-extensions?url=${extension.development.root.url}`
+    } else {
+      return `https://${state.store}/admin/extensions-dev/mobile?url=${extension.development.root.url}`
     }
-
-    // View app home (iframe) in mobile app
-    if (type === 'home') {
-      return app.mobileUrl
-    }
-
-    // View a UI extension in mobile app
-    return `https://${store}/admin/extensions-dev/mobile?url=${url}`
-  }, [url, app, app?.mobileUrl])
+  }, [extension, state.app, state.store])
 
   const onButtonClick = useCallback(() => {
-    if (qrCodeURL && copyToClipboard(qrCodeURL)) {
-      toast(i18n.translate('qrcode.copied'), {toastId: `copy-qrcode-${qrCodeURL}`})
+    if (mobileQRCode && copyToClipboard(mobileQRCode)) {
+      showToast({
+        content: i18n.translate('qrcode.copied'),
+      })
     }
-  }, [qrCodeURL])
+  }, [mobileQRCode, showToast, i18n])
 
-  if (!qrCodeURL) {
+  // We should be checking for development with the code below
+  // const isDevelopment = Boolean(import.meta.env.VITE_WEBSOCKET_HOST);
+  // Unfortunately, ts-jest is throwing errors. See issue for more details.
+  // https://github.com/kulshekhar/ts-jest/issues/1174
+  const isDevelopment = false
+
+  if (!extension) {
     return null
   }
 
-  return (
-    <div className={styles.Wrapper}>
-      <span className={styles.LeftColumn}>
-        <span className={styles.QRCode}>
-          <QRCode value={qrCodeURL} size={170} />
-        </span>
-      </span>
-      <span className={styles.RightColumn}>
-        {i18n.translate('right.one')}
-        <span className={styles.UrlCta}>
-          {i18n.translate('right.two')}{' '}
-          <IconButton
-            type="button"
-            source={ClipboardMinor}
-            accessibilityLabel={i18n.translate('qrcode.copy')}
-            onClick={onButtonClick}
-          />
-        </span>
-      </span>
-    </div>
-  )
+  if (!isDevelopment && extension.development.root.url.includes('localhost')) {
+    return (
+      <Stack alignment="center" vertical>
+        <Icon source={CircleAlertMajor} color="subdued" />
+        <p>{i18n.translate('qrcode.useSecureURL')}</p>
+      </Stack>
+    )
+  }
+
+  if (mobileQRCode) {
+    return (
+      <div className={styles.Wrapper}>
+        <div className={styles.CopyLink}>
+          <Button icon={DuplicateMinor} plain monochrome onClick={onButtonClick}>
+            {i18n.translate('qrcode.copy')}
+          </Button>
+        </div>
+        <QRCode value={mobileQRCode} />
+        <p>
+          {i18n.translate('qrcode.content', {
+            thisExtension: <b>{i18n.translate('qrcode.thisExtension')}</b>,
+          })}
+        </p>
+      </div>
+    )
+  }
+
+  return null
 }

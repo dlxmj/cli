@@ -1,12 +1,9 @@
 import {AppInterface} from '../../models/app/app.js'
+import {UIExtension, FunctionExtension, ThemeExtension} from '../../models/app/extensions.js'
 import {bundleExtension} from '../extensions/bundle.js'
-import {buildJSFunction} from '../function/build.js'
-import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
+import {error, system, abort, output} from '@shopify/cli-kit'
 import {execThemeCheckCLI} from '@shopify/cli-kit/node/ruby'
-import {exec} from '@shopify/cli-kit/node/system'
-import {AbortSignal} from '@shopify/cli-kit/node/abort'
-import {AbortSilentError} from '@shopify/cli-kit/node/error'
-import {Writable} from 'stream'
+import {Writable} from 'node:stream'
 
 export interface ExtensionBuildOptions {
   /**
@@ -21,7 +18,7 @@ export interface ExtensionBuildOptions {
   /**
    * Signal to abort the build process.
    */
-  signal?: AbortSignal
+  signal: abort.Signal
 
   /**
    * Overrides the default build directory.
@@ -29,27 +26,50 @@ export interface ExtensionBuildOptions {
   buildDirectory?: string
 
   /**
-   * Use tasks to build the extension.
-   */
-  useTasks?: boolean
-
-  /**
    * The app that contains the extensions.
    */
   app: AppInterface
+}
+
+export interface ThemeExtensionBuildOptions extends ExtensionBuildOptions {
+  /**
+   * The UI extensions to be built.
+   */
+  extensions: ThemeExtension[]
 }
 
 /**
  * It builds the theme extensions.
  * @param options - Build options.
  */
-export async function buildThemeExtension(extension: ExtensionInstance, options: ExtensionBuildOptions): Promise<void> {
+export async function buildThemeExtensions(options: ThemeExtensionBuildOptions): Promise<void> {
+  if (options.extensions.length === 0) return
   options.stdout.write(`Running theme check on your Theme app extension...`)
+  const themeDirectories = options.extensions.map((extension) => extension.directory)
   await execThemeCheckCLI({
-    directories: [extension.directory],
+    directories: themeDirectories,
     args: ['-C', ':theme_app_extension'],
     stdout: options.stdout,
     stderr: options.stderr,
+  })
+}
+
+interface BuildUIExtensionsOptions {
+  app: AppInterface
+}
+
+export async function buildUIExtensions(options: BuildUIExtensionsOptions): Promise<output.OutputProcess[]> {
+  if (options.app.extensions.ui.length === 0) {
+    return []
+  }
+
+  return options.app.extensions.ui.map((uiExtension) => {
+    return {
+      prefix: uiExtension.localIdentifier,
+      action: async (stdout: Writable, stderr: Writable, signal: abort.Signal) => {
+        await buildUIExtension(uiExtension, {stdout, stderr, signal, app: options.app})
+      },
+    }
   })
 }
 
@@ -57,12 +77,12 @@ export async function buildThemeExtension(extension: ExtensionInstance, options:
  * It builds the UI extensions.
  * @param options - Build options.
  */
-export async function buildUIExtension(extension: ExtensionInstance, options: ExtensionBuildOptions): Promise<void> {
+export async function buildUIExtension(extension: UIExtension, options: ExtensionBuildOptions): Promise<void> {
   options.stdout.write(`Bundling UI extension ${extension.localIdentifier}...`)
 
   await bundleExtension({
     minify: true,
-    outputPath: extension.outputPath,
+    outputBundlePath: extension.outputBundlePath,
     stdin: {
       contents: extension.getBundleExtensionStdinContent(),
       resolveDir: extension.directory,
@@ -73,8 +93,6 @@ export async function buildUIExtension(extension: ExtensionInstance, options: Ex
     stderr: options.stderr,
     stdout: options.stdout,
   })
-
-  await extension.buildValidation()
 
   options.stdout.write(`${extension.localIdentifier} successfully built`)
 }
@@ -87,26 +105,11 @@ export interface BuildFunctionExtensionOptions extends ExtensionBuildOptions {}
  * @param options - Options to configure the build of the extension.
  */
 export async function buildFunctionExtension(
-  extension: ExtensionInstance,
+  extension: FunctionExtension,
   options: BuildFunctionExtensionOptions,
 ): Promise<void> {
-  if (extension.isJavaScript) {
-    return runCommandOrBuildJSFunction(extension, options)
-  } else {
-    return buildOtherFunction(extension, options)
-  }
-}
-
-async function runCommandOrBuildJSFunction(extension: ExtensionInstance, options: BuildFunctionExtensionOptions) {
-  if (extension.buildCommand) {
-    return runCommand(extension.buildCommand, extension, options)
-  } else {
-    return buildJSFunction(extension, options)
-  }
-}
-
-async function buildOtherFunction(extension: ExtensionInstance, options: BuildFunctionExtensionOptions) {
-  if (!extension.buildCommand) {
+  const buildCommand = extension.configuration.build?.command
+  if (!buildCommand || buildCommand.trim() === '') {
     options.stderr.write(
       `The function extension ${extension.localIdentifier} doesn't have a build command or it's empty`,
     )
@@ -118,15 +121,11 @@ async function buildOtherFunction(extension: ExtensionInstance, options: BuildFu
 
     Note that the command must output a dist/index.wasm file.
     `)
-    throw new AbortSilentError()
+    throw new error.AbortSilent()
   }
-  return runCommand(extension.buildCommand, extension, options)
-}
-
-async function runCommand(buildCommand: string, extension: ExtensionInstance, options: BuildFunctionExtensionOptions) {
   const buildCommandComponents = buildCommand.split(' ')
   options.stdout.write(`Building function ${extension.localIdentifier}...`)
-  await exec(buildCommandComponents[0]!, buildCommandComponents.slice(1), {
+  await system.exec(buildCommandComponents[0]!, buildCommandComponents.slice(1), {
     stdout: options.stdout,
     stderr: options.stderr,
     cwd: extension.directory,

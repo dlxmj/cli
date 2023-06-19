@@ -1,5 +1,5 @@
-import {joinPath} from './path.js'
-import {existsSync, readFileSync} from 'fs'
+import {join as pathJoin} from '../../path.js'
+import {existsSync, readFileSync} from 'node:fs'
 
 interface FrameworkDetectionPattern {
   /**
@@ -148,7 +148,7 @@ const frameworks: Framework[] = [
  * @param rootDirectory - Directory from which the files required for each framework are searched
  * @returns The name of the framework used or 'unknown' otherwise
  */
-export async function resolveFramework(rootDirectory: string): Promise<string> {
+export async function resolveFramework(rootDirectory: string) {
   const fwConfigFiles: {[key: string]: string | undefined} = {}
 
   const matchedFramework = frameworks.find(
@@ -187,7 +187,7 @@ function loadFwConfigFile(
     return fwConfigFiles
   }
 
-  const fwConfigFilePath = joinPath(rootPath, fwConfigFileName)
+  const fwConfigFilePath = pathJoin(rootPath, fwConfigFileName)
   if (!existsSync(fwConfigFilePath)) {
     return fwConfigFiles
   }

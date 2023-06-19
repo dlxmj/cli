@@ -1,19 +1,18 @@
 import {selectApp} from '../select-app.js'
 import {AppInterface} from '../../../models/app/app.js'
+import {output, file} from '@shopify/cli-kit'
 import {patchEnvFile} from '@shopify/cli-kit/node/dot-env'
 import {diffLines} from 'diff'
-import {fileExists, readFile, writeFile} from '@shopify/cli-kit/node/fs'
-import {OutputMessage, outputContent, outputToken} from '@shopify/cli-kit/node/output'
 
 interface PullEnvOptions {
   envFile: string
 }
 
-export async function pullEnv(app: AppInterface, {envFile}: PullEnvOptions): Promise<OutputMessage> {
+export async function pullEnv(app: AppInterface, {envFile}: PullEnvOptions): Promise<output.Message> {
   return updateEnvFile(app, envFile)
 }
 
-export async function updateEnvFile(app: AppInterface, envFile: PullEnvOptions['envFile']): Promise<OutputMessage> {
+export async function updateEnvFile(app: AppInterface, envFile: PullEnvOptions['envFile']): Promise<output.Message> {
   const selectedApp = await selectApp()
 
   const updatedValues = {
@@ -22,31 +21,31 @@ export async function updateEnvFile(app: AppInterface, envFile: PullEnvOptions['
     SCOPES: app.configuration.scopes,
   }
 
-  if (await fileExists(envFile)) {
-    const envFileContent = await readFile(envFile)
+  if (await file.exists(envFile)) {
+    const envFileContent = await file.read(envFile)
     const updatedEnvFileContent = patchEnvFile(envFileContent, updatedValues)
 
     if (updatedEnvFileContent === envFileContent) {
-      return outputContent`No changes to ${outputToken.path(envFile)}`
+      return output.content`No changes to ${output.token.path(envFile)}`
     } else {
-      await writeFile(envFile, updatedEnvFileContent)
+      await file.write(envFile, updatedEnvFileContent)
 
       const diff = diffLines(envFileContent ?? '', updatedEnvFileContent)
-      return outputContent`Updated ${outputToken.path(envFile)} to be:
+      return output.content`Updated ${output.token.path(envFile)} to be:
 
 ${updatedEnvFileContent}
 
 Here's what changed:
 
-${outputToken.linesDiff(diff)}
+${output.token.linesDiff(diff)}
   `
     }
   } else {
     const newEnvFileContent = patchEnvFile(null, updatedValues)
 
-    await writeFile(envFile, newEnvFileContent)
+    await file.write(envFile, newEnvFileContent)
 
-    return outputContent`Created ${outputToken.path(envFile)}:
+    return output.content`Created ${output.token.path(envFile)}:
 
 ${newEnvFileContent}
 `

@@ -2,14 +2,13 @@
     "name": "plugin-ngrok",
     "root": "packages/plugin-ngrok",
     "sourceRoot": "packages/plugin-ngrok/src",
-    "$schema": "../../node_modules/nx/schemas/project-schema.json",
     "projectType": "library",
     "tags": ["scope:plugin"],
     "targets": {
       "clean": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm rimraf dist/",
+          "command": "yarn rimraf dist/",
           "cwd": "packages/plugin-ngrok"
         }
       },
@@ -18,21 +17,21 @@
         "outputs": ["dist"],
         "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/package.json"],
         "options": {
-          "command": "pnpm tsc -b ./tsconfig.build.json",
+          "command": "yarn tsc -b ./tsconfig.build.json",
           "cwd": "packages/plugin-ngrok"
         }
       },
       "lint": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm eslint \"src/**/*.ts\"",
+          "command": "yarn eslint \"src/**/*.ts\"",
           "cwd": "packages/plugin-ngrok"
         }
       },
       "lint:fix": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm eslint 'src/**/*.ts' --fix",
+          "command": "yarn eslint 'src/**/*.ts' --fix",
           "cwd": "packages/plugin-ngrok"
         }
       },
@@ -40,7 +39,7 @@
         "executor": "nx:run-commands",
         "dependsOn": ["^build"],
         "options": {
-          "command": "pnpm vitest run",
+          "command": "yarn vitest run",
           "cwd": "packages/plugin-ngrok"
         }
       },
@@ -48,21 +47,14 @@
         "executor": "nx:run-commands",
         "dependsOn": ["^build"],
         "options": {
-          "command": "pnpm vitest watch",
+          "command": "yarn vitest watch",
           "cwd": "packages/plugin-ngrok"
         }
       },
       "type-check": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "pnpm tsc --noEmit",
-          "cwd": "packages/plugin-ngrok"
-        }
-      },
-      "refresh-manifests": {
-        "executor": "nx:run-commands",
-        "options": {
-          "command": "pnpm oclif manifest",
+          "command": "yarn tsc --noEmit",
           "cwd": "packages/plugin-ngrok"
         }
       }

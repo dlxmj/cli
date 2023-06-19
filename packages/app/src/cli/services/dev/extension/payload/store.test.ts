@@ -6,8 +6,8 @@ import {
 } from './store.js'
 import {UIExtensionPayload, ExtensionsEndpointPayload} from './models.js'
 import * as payload from '../payload.js'
-import {ExtensionInstance} from '../../../../models/extensions/extension-instance.js'
-import {beforeEach, describe, expect, test, vi} from 'vitest'
+import {UIExtension} from '../../../../models/app/extensions.js'
+import {beforeEach, describe, expect, it, test, vi} from 'vitest'
 
 describe('getExtensionsPayloadStoreRawPayload()', () => {
   test('returns the raw payload', async () => {
@@ -18,14 +18,10 @@ describe('getExtensionsPayloadStoreRawPayload()', () => {
 
     const options = {
       apiKey: 'mock-api-key',
-      app: {
-        name: 'mock-app-name',
-      },
       url: 'https://mock-url.com',
       websocketURL: 'wss://mock-websocket-url.com',
       extensions: [{}, {}, {}],
       storeFqdn: 'mock-store-fqdn.shopify.com',
-      manifestVersion: '3',
     } as unknown as ExtensionsPayloadStoreOptions
 
     // When
@@ -34,11 +30,7 @@ describe('getExtensionsPayloadStoreRawPayload()', () => {
     // Then
     expect(rawPayload).toMatchObject({
       app: {
-        title: 'mock-app-name',
         apiKey: 'mock-api-key',
-        url: 'https://mock-url.com?shop=mock-store-fqdn.shopify.com&host=bW9jay1zdG9yZS1mcWRuLnNob3BpZnkuY29tL2FkbWlu',
-        mobileUrl:
-          'https://mock-store-fqdn.shopify.com/admin/apps/mock-api-key?shop=mock-store-fqdn.shopify.com&host=bW9jay1zdG9yZS1mcWRuLnNob3BpZnkuY29tL2FkbWluL2FwcHMvbW9jay1hcGkta2V5',
       },
       version: '3',
       root: {
@@ -151,7 +143,7 @@ describe('ExtensionsPayloadStore()', () => {
   })
 
   describe('updateExtensions() informs event listeners of the updated extensions', () => {
-    test('updates only the extensions existing in the store', () => {
+    it('updates only the extensions existing in the store', () => {
       // Given
       const payload = {
         extensions: [{uuid: '123'}],
@@ -173,48 +165,7 @@ describe('ExtensionsPayloadStore()', () => {
       expect(extensionsPayloadStore.getRawPayload().extensions[0]?.test).toEqual('value')
     })
 
-    test('deep merge extension points with incoming payload when the target matches', () => {
-      // Given
-      const payload = {
-        extensions: [
-          {
-            uuid: '123',
-            extensionPoints: [
-              {target: 'First::Extension::Point', extraProp: '1', resource: {url: ''}},
-              {target: 'Second::Extension::Point', extraProp: '2', resource: {url: ''}},
-              {target: 'Third::Extension::Point', extraProp: '3', resource: {url: ''}},
-            ],
-          },
-        ],
-      } as unknown as ExtensionsEndpointPayload
-
-      const extensionsPayloadStore = new ExtensionsPayloadStore(payload, mockOptions)
-
-      // When
-      extensionsPayloadStore.updateExtensions([
-        {
-          uuid: '123',
-          extensionPoints: [
-            {target: 'First::Extension::Point', resource: {url: '/first-extension-point-url'}},
-            {target: 'Second::Extension::Point', resource: {url: '/second-extension-point-url'}},
-          ],
-        },
-      ] as unknown as UIExtensionPayload[])
-
-      // Then
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      expect(extensionsPayloadStore.getRawPayload().extensions[0]).toMatchObject({
-        uuid: '123',
-        extensionPoints: [
-          {target: 'First::Extension::Point', extraProp: '1', resource: {url: '/first-extension-point-url'}},
-          {target: 'Second::Extension::Point', extraProp: '2', resource: {url: '/second-extension-point-url'}},
-          {target: 'Third::Extension::Point', extraProp: '3', resource: {url: ''}},
-        ],
-      })
-    })
-
-    test('informs event listeners of updated extensions', () => {
+    it('informs event listeners of updated extensions', () => {
       // Given
       const payload = {
         extensions: [{uuid: '123'}, {uuid: '456'}, {uuid: '789'}, {uuid: '101'}],
@@ -251,10 +202,10 @@ describe('ExtensionsPayloadStore()', () => {
       } as unknown as ExtensionsEndpointPayload
 
       const extensionsPayloadStore = new ExtensionsPayloadStore(mockPayload, mockOptions)
-      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as ExtensionInstance
+      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as UIExtension
 
       // When
-      await extensionsPayloadStore.updateExtension(updatedExtension, mockOptions, {hidden: true})
+      await extensionsPayloadStore.updateExtension(updatedExtension, {hidden: true})
 
       // Then
       expect(payload.getUIExtensionPayload).toHaveBeenCalledWith(updatedExtension, {
@@ -278,10 +229,10 @@ describe('ExtensionsPayloadStore()', () => {
       } as unknown as ExtensionsEndpointPayload
 
       const extensionsPayloadStore = new ExtensionsPayloadStore(mockPayload, mockOptions)
-      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as ExtensionInstance
+      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as UIExtension
 
       // When
-      await extensionsPayloadStore.updateExtension(updatedExtension, mockOptions)
+      await extensionsPayloadStore.updateExtension(updatedExtension)
 
       // Then
       expect(payload.getUIExtensionPayload).toHaveBeenCalledWith(updatedExtension, {
@@ -309,10 +260,10 @@ describe('ExtensionsPayloadStore()', () => {
       } as unknown as ExtensionsEndpointPayload
 
       const extensionsPayloadStore = new ExtensionsPayloadStore(mockPayload, mockOptions)
-      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as ExtensionInstance
+      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as UIExtension
 
       // When
-      await extensionsPayloadStore.updateExtension(updatedExtension, mockOptions)
+      await extensionsPayloadStore.updateExtension(updatedExtension)
 
       // Then
       expect(payload.getUIExtensionPayload).toHaveBeenCalledWith(updatedExtension, {
@@ -334,33 +285,33 @@ describe('ExtensionsPayloadStore()', () => {
       } as unknown as ExtensionsEndpointPayload
 
       const extensionsPayloadStore = new ExtensionsPayloadStore(mockPayload, mockOptions)
-      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as ExtensionInstance
+      const updatedExtension = {devUUID: '123', updated: 'extension'} as unknown as UIExtension
       const onUpdateSpy = vi.fn()
 
       extensionsPayloadStore.on(ExtensionsPayloadStoreEvent.Update, onUpdateSpy)
 
       // When
-      await extensionsPayloadStore.updateExtension(updatedExtension, mockOptions)
+      await extensionsPayloadStore.updateExtension(updatedExtension)
 
       // Then
       expect(onUpdateSpy).toHaveBeenCalledWith(['123'])
     })
 
-    test('does not update or inform event listeners if the extension does not exist', async () => {
+    test('Does not update or inform event listeners if the extension does not exist', async () => {
       // Given
       const mockPayload = {
         extensions: [{uuid: '123'}],
       } as unknown as ExtensionsEndpointPayload
 
       const extensionsPayloadStore = new ExtensionsPayloadStore(mockPayload, mockOptions)
-      const updatedExtension = {devUUID: '789', updated: 'extension'} as unknown as ExtensionInstance
+      const updatedExtension = {devUUID: '789', updated: 'extension'} as unknown as UIExtension
       const onUpdateSpy = vi.fn()
       const initialRawPayload = extensionsPayloadStore.getRawPayload()
 
       extensionsPayloadStore.on(ExtensionsPayloadStoreEvent.Update, onUpdateSpy)
 
       // When
-      await extensionsPayloadStore.updateExtension(updatedExtension, mockOptions)
+      await extensionsPayloadStore.updateExtension(updatedExtension)
 
       // Then
       expect(initialRawPayload).toStrictEqual(extensionsPayloadStore.getRawPayload())

@@ -1,18 +1,16 @@
 import {themeFlags} from '../../flags.js'
-import {ensureThemeStore} from '../../utilities/theme-store.js'
+import {getThemeStore} from '../../utilities/theme-store.js'
 import ThemeCommand from '../../utilities/theme-command.js'
-import {dev, refreshTokens, showDeprecationWarnings} from '../../services/dev.js'
-import {DevelopmentThemeManager} from '../../utilities/development-theme-manager.js'
-import {findOrSelectTheme} from '../../utilities/theme-selector.js'
 import {Flags} from '@oclif/core'
-import {globalFlags} from '@shopify/cli-kit/node/cli'
+import {cli, output, session, abort} from '@shopify/cli-kit'
+import {execCLI2} from '@shopify/cli-kit/node/ruby'
 
 export default class Dev extends ThemeCommand {
   static description =
     'Uploads the current theme as a development theme to the connected store, then prints theme editor and preview URLs to your terminal. While running, changes will push to the store in real time.'
 
   static flags = {
-    ...globalFlags,
+    ...cli.globalFlags,
     path: themeFlags.path,
     host: Flags.string({
       description: 'Set which network interface the web server listens on. The default value is 127.0.0.1.',
@@ -32,6 +30,7 @@ export default class Dev extends ThemeCommand {
       env: 'SHOPIFY_FLAG_POLL',
     }),
     'theme-editor-sync': Flags.boolean({
+      char: 'e',
       description: 'Synchronize Theme Editor updates in the local theme files.',
       env: 'SHOPIFY_FLAG_THEME_EDITOR_SYNC',
     }),
@@ -69,67 +68,36 @@ export default class Dev extends ThemeCommand {
       description: 'Proceed without confirmation, if current directory does not seem to be theme directory.',
       env: 'SHOPIFY_FLAG_FORCE',
     }),
-    password: themeFlags.password,
-    environment: themeFlags.environment,
-    notify: Flags.string({
-      description:
-        'The file path or URL. The file path is to a file that you want updated on idle. The URL path is where you want a webhook posted to report on file changes.',
-      env: 'SHOPIFY_FLAG_NOTIFY',
-    }),
   }
 
-  static cli2Flags = [
-    'host',
-    'live-reload',
-    'poll',
-    'theme-editor-sync',
-    'overwrite-json',
-    'port',
-    'theme',
-    'only',
-    'ignore',
-    'stable',
-    'force',
-    'notify',
-  ]
+  // Tokens are valid for 120m, better to be safe and refresh every 90min
+  ThemeRefreshTimeoutInMinutes = 90
 
-  /**
-   * Executes the theme serve command.
-   * Every 110 minutes, it will refresh the session token.
-   */
   async run(): Promise<void> {
-    showDeprecationWarnings(this.argv)
+    const {flags} = await this.parse(Dev)
 
-    let {flags} = await this.parse(Dev)
-    const store = ensureThemeStore(flags)
+    const flagsToPass = this.passThroughFlags(flags, {exclude: ['path', 'store', 'verbose']})
+    const command = ['theme', 'serve', flags.path, ...flagsToPass]
 
-    const {adminSession, storefrontToken} = await refreshTokens(store, flags.password)
+    const store = await getThemeStore(flags)
 
-    if (flags.theme) {
-      const filter = {filter: {theme: flags.theme}}
-      const theme = await findOrSelectTheme(adminSession, filter)
+    let controller: abort.Controller = new abort.Controller()
 
-      flags = {...flags, theme: theme.id.toString()}
-    } else {
-      const theme = await new DevelopmentThemeManager(adminSession).findOrCreate()
-      const overwriteJson = flags['theme-editor-sync'] && theme.createdAtRuntime
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    const refreshThemeSessionInterval = setInterval(async () => {
+      output.debug('Refreshing theme session...')
+      controller.abort()
+      controller = new abort.Controller()
+      await this.execute(store, command, controller)
+    }, this.ThemeRefreshTimeoutInMinutes * 60 * 1000)
 
-      flags = {...flags, theme: theme.id.toString(), 'overwrite-json': overwriteJson}
-    }
+    await this.execute(store, command, controller)
+    clearInterval(refreshThemeSessionInterval)
+  }
 
-    const flagsToPass = this.passThroughFlags(flags, {allowedFlags: Dev.cli2Flags})
-
-    await dev({
-      adminSession,
-      storefrontToken,
-      directory: flags.path,
-      store,
-      password: flags.password,
-      theme: flags.theme!,
-      host: flags.host,
-      port: flags.port,
-      force: flags.force,
-      flagsToPass,
-    })
+  async execute(store: string, command: string[], controller: AbortController) {
+    const adminSession = await session.ensureAuthenticatedThemes(store, undefined, [], true)
+    const storefrontToken = await session.ensureAuthenticatedStorefront()
+    await execCLI2(command, {adminSession, storefrontToken, signal: controller.signal as abort.Signal})
   }
 }

@@ -1,7 +1,6 @@
-import {startAnalytics} from '../../../private/node/analytics.js'
-import {outputDebug} from '../../../public/node/output.js'
+import {start} from '../../../analytics.js'
+import {debug} from '../../../output.js'
 import Command from '../../../public/node/base-command.js'
-import {initDemoRecorder} from '../../../private/node/demo-recorder.js'
 import {Hook} from '@oclif/core'
 
 export declare interface CommandContent {
@@ -11,18 +10,17 @@ export declare interface CommandContent {
 }
 // This hook is called before each command run. More info: https://oclif.io/docs/hooks
 export const hook: Hook.Prerun = async (options) => {
-  initDemoRecorder()
   const commandContent = parseCommandContent({
     id: options.Command.id,
     aliases: options.Command.aliases,
     pluginAlias: options.Command.plugin?.alias,
   })
   const args = options.argv
-  outputDebug(`Running command ${commandContent.command}`)
-  await startAnalytics({commandContent, args, commandClass: options.Command as unknown as typeof Command})
+  debug(`Running command ${commandContent.command}`)
+  await start({commandContent, args, commandClass: options.Command as unknown as typeof Command})
 }
 
-export function parseCommandContent(cmdInfo: {id: string; aliases: string[]; pluginAlias?: string}): CommandContent {
+export function parseCommandContent(cmdInfo: {id: string; aliases: string[]; pluginAlias?: string}) {
   let commandContent = parseCreateCommand(cmdInfo.pluginAlias)
   if (!commandContent) {
     commandContent = parseNormalCommand(cmdInfo.id, cmdInfo.aliases)

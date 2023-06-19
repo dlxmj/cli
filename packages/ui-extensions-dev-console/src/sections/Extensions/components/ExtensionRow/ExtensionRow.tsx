@@ -1,62 +1,80 @@
 import * as styles from './ExtensionRow.module.scss'
 import en from './translations/en.json'
-
-import {PreviewLinks} from './components'
-import {QRCodeModal, Row, Status, View} from '..'
-import {useExtension} from '../../hooks/useExtension'
-import React, {useState} from 'react'
+import {ActionSet, ActionSetProps} from '../ActionSet'
+import React, {MouseEvent, useCallback, useState} from 'react'
 import {useI18n} from '@shopify/react-i18n'
 import {ExtensionPayload} from '@shopify/ui-extensions-server-kit'
-import {Button} from '@/components/Button'
+import {Checkbox} from '@/components/CheckBox'
 
-interface Props {
-  uuid: ExtensionPayload['uuid']
-}
+export type ExtensionRowProps = {
+  extension: ExtensionPayload
+  selected?: boolean
+  onSelect(extension: ExtensionPayload): void
+  onHighlight(extension: ExtensionPayload): void
+  onClearHighlight(): void
+} & Pick<ActionSetProps, 'onShowMobileQRCode' | 'onCloseMobileQRCode'>
 
-export function ExtensionRow({uuid}: Props) {
-  const [showModal, setShowModal] = useState(false)
+export function ExtensionRow({
+  extension,
+  selected,
+  onSelect,
+  onHighlight,
+  onClearHighlight,
+  ...actionSetProps
+}: ExtensionRowProps) {
   const [i18n] = useI18n({
     id: 'ExtensionRow',
     fallback: en,
   })
+  const {
+    development: {hidden, status},
+  } = extension
 
-  const {focus, unfocus, extension, show, hide} = useExtension(uuid)
+  const handleSelect = useCallback(
+    (event?: MouseEvent) => {
+      if (event) event.stopPropagation()
+      onSelect(extension)
+    },
+    [extension, onSelect],
+  )
 
-  if (!extension) {
-    return null
-  }
+  const [isFocus, setFocus] = useState(false)
+
+  const textClass = hidden ? styles.Hidden : undefined
+  const statusClass = status ? styles[status || 'error'] : styles.error
 
   return (
-    <Row onMouseEnter={focus} onMouseLeave={unfocus}>
+    <tr
+      className={styles.DevToolRow}
+      onClick={handleSelect}
+      onFocus={() => {
+        setFocus(true)
+      }}
+      onBlur={() => {
+        setFocus(false)
+      }}
+      onMouseEnter={() => onHighlight(extension)}
+      onMouseLeave={onClearHighlight}
+    >
       <td>
-        <span className={styles.Title}>{extension.title}</span>
+        {
+          // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+          <div onClick={(event) => event.stopPropagation()}>
+            <Checkbox label="" checked={selected} onChange={() => handleSelect()} />
+          </div>
+        }
       </td>
+      <td className={textClass}>{extension.title}</td>
+      <td className={textClass}>{extension.externalType}</td>
       <td>
-        <PreviewLinks extension={extension} />
+        <span className={`${styles.Status} ${statusClass}`}>{i18n.translate(`statuses.${status}`)}</span>
       </td>
-      <td>
-        <Button type="button" onClick={() => setShowModal(true)}>
-          {i18n.translate('viewMobile')}
-        </Button>
-        <QRCodeModal
-          code={
-            showModal
-              ? {
-                  url: extension.development.root.url,
-                  type: extension.surface,
-                  title: extension.title,
-                }
-              : undefined
-          }
-          onClose={() => setShowModal(false)}
-        />
-      </td>
-      <td>
-        <View show={show} hide={hide} hidden={extension.development.hidden} />
-      </td>
-      <td>
-        <Status status={extension.development.status} />
-      </td>
-    </Row>
+      <ActionSet
+        className={`${styles.ActionSet} ${isFocus ? styles.ForceVisible : ''}`}
+        selected={selected}
+        extension={extension}
+        {...actionSetProps}
+      />
+    </tr>
   )
 }

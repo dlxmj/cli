@@ -1,20 +1,8 @@
-import {ExtendableError} from '../error.js'
-import {FanoutHookFunction, PluginReturnsForHook} from '../plugins.js'
-import {err, Result} from '../result.js'
+import {err, Result} from '../../common/result.js'
+import {FanoutHookFunction, PluginReturnsForHook} from '../../../plugins.js'
+import {ExtendableError} from '../../../error.js'
 
 export type TunnelErrorType = 'invalid-provider' | 'tunnel-already-running' | 'wrong-credentials' | 'unknown'
-export interface TunnelClient {
-  getTunnelStatus: () => TunnelStatusType
-  stopTunnel: () => void
-  provider: string
-  port: number
-}
-export type TunnelStatusType =
-  | {status: 'not-started'}
-  | {status: 'starting'}
-  | {status: 'connected'; url: string}
-  | {status: 'error'; message: string; tryMessage?: string}
-
 export class TunnelError extends ExtendableError {
   type: TunnelErrorType
   constructor(type: TunnelErrorType, message?: string) {
@@ -32,7 +20,7 @@ export interface HookReturnPerTunnelPlugin {
   tunnel_start: {
     options: {port: number; provider: string}
     pluginReturns: {
-      [key: string]: Result<TunnelClient, TunnelError>
+      [pluginName: string]: Result<{url: string}, TunnelError>
     }
   }
   tunnel_provider: {
@@ -51,7 +39,6 @@ export type TunnelStartAction = (port: number) => Promise<TunnelStartReturn>
 export const defineProvider = (input: {name: string}): TunnelProviderFunction => {
   return async () => input
 }
-
 export const startTunnel = (options: {provider: string; action: TunnelStartAction}): TunnelStartFunction => {
   return async (inputs: {provider: string; port: number}): Promise<TunnelStartReturn> => {
     if (inputs.provider !== options.provider) return err(new TunnelError('invalid-provider'))

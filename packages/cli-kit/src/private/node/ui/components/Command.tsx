@@ -1,14 +1,14 @@
 import {Text} from 'ink'
-import React, {FunctionComponent} from 'react'
+import React from 'react'
 
-interface CommandProps {
+interface Props {
   command: string
 }
 
 /**
  * `Command` displays a command as non-dimmed text.
  */
-const Command: FunctionComponent<CommandProps> = ({command}): JSX.Element => {
+const Command: React.FC<Props> = ({command}: React.PropsWithChildren<Props>): JSX.Element => {
   return <Text>`{command}`</Text>
 }
 

@@ -1,62 +1,130 @@
 import {
   updateURLs,
+  generateURL,
   getURLs,
   shouldOrPromptUpdateURLs,
   generateFrontendURL,
   generatePartnersURLs,
-  PartnersURLs,
-  validatePartnersURLs,
-  FrontendURLOptions,
 } from './urls.js'
 import {testApp} from '../../models/app/app.test-data.js'
-import {UpdateURLsQuery} from '../../api/graphql/update_urls.js'
-import {GetURLsQuery} from '../../api/graphql/get_urls.js'
-import {setAppInfo} from '../local-storage.js'
-import {beforeEach, describe, expect, vi, test} from 'vitest'
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {api, environment, error, outputMocker, plugins, store, ui} from '@shopify/cli-kit'
 import {Config} from '@oclif/core'
-import {AbortError} from '@shopify/cli-kit/node/error'
+import {err, ok} from '@shopify/cli-kit/common/result'
+import {AbortSilentError, BugError} from '@shopify/cli-kit/node/error'
 import {getAvailableTCPPort} from '@shopify/cli-kit/node/tcp'
-import {partnersRequest} from '@shopify/cli-kit/node/api/partners'
-import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
-import {isSpin, spinFqdn, appPort, appHost} from '@shopify/cli-kit/node/context/spin'
-import {codespaceURL, gitpodURL, isUnitTest} from '@shopify/cli-kit/node/context/local'
-import {renderSelectPrompt} from '@shopify/cli-kit/node/ui'
-import {terminalSupportsRawMode} from '@shopify/cli-kit/node/system'
-
-vi.mock('../local-storage.js')
-vi.mock('@shopify/cli-kit/node/tcp')
-vi.mock('@shopify/cli-kit/node/api/partners')
-vi.mock('@shopify/cli-kit/node/session')
-vi.mock('@shopify/cli-kit/node/context/spin')
-vi.mock('@shopify/cli-kit/node/context/local')
-vi.mock('@shopify/cli-kit/node/plugins')
-vi.mock('@shopify/cli-kit/node/ui')
-vi.mock('@shopify/cli-kit/node/system')
 
 beforeEach(() => {
+  vi.mock('@shopify/cli-kit/node/tcp')
   vi.mocked(getAvailableTCPPort).mockResolvedValue(3042)
-  vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')
-  vi.mocked(isUnitTest).mockReturnValue(true)
-  vi.mocked(terminalSupportsRawMode).mockReturnValue(true)
+  vi.mock('@shopify/cli-kit', async () => {
+    const cliKit: any = await vi.importActual('@shopify/cli-kit')
+    return {
+      ...cliKit,
+      session: {
+        ensureAuthenticatedPartners: async () => 'token',
+      },
+      api: {
+        partners: {
+          request: vi.fn(),
+        },
+        graphql: cliKit.api.graphql,
+      },
+      plugins: {
+        lookupTunnelPlugin: vi.fn(),
+        runTunnelPlugin: vi.fn(),
+      },
+      ui: {
+        prompt: vi.fn(),
+      },
+      store: {
+        setAppInfo: vi.fn(),
+      },
+      environment: {
+        local: {
+          codespaceURL: vi.fn(),
+          gitpodURL: vi.fn(),
+        },
+        spin: {
+          isSpin: vi.fn(),
+          fqdn: vi.fn(),
+        },
+      },
+    }
+  })
 })
 
-const defaultOptions: FrontendURLOptions = {
-  app: testApp(),
-  noTunnel: false,
-  tunnelUrl: undefined,
-  commandConfig: new Config({root: ''}),
-  tunnelClient: {
-    getTunnelStatus: () => ({status: 'starting'}),
-    stopTunnel: () => {},
-    provider: 'cloudflare',
-    port: 1111,
-  },
-}
+describe('generateURL', () => {
+  it('returns a tunnel URL by default', async () => {
+    // Given
+    const config = new Config({root: ''})
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(ok('https://fake-url.ngrok.io'))
+
+    // When
+    const got = await generateURL(config, 3456)
+
+    // Then
+    expect(got).toEqual('https://fake-url.ngrok.io')
+  })
+
+  it('throws error if there are multiple urls', async () => {
+    // Given
+    const config = new Config({root: ''})
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(err({provider: 'ngrok', type: 'multiple-urls'}))
+
+    // When
+    const got = generateURL(config, 3456)
+
+    // Then
+    await expect(got).rejects.toThrow(BugError)
+    await expect(got).rejects.toThrow(/Multiple tunnel plugins for ngrok found/)
+  })
+
+  it('throws error if there is no provider', async () => {
+    // Given
+    const config = new Config({root: ''})
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(err({provider: 'ngrok', type: 'no-provider'}))
+
+    // When
+    const got = generateURL(config, 3456)
+
+    // Then
+    await expect(got).rejects.toThrow(BugError)
+    await expect(got).rejects.toThrow(/We couldn't find the ngrok tunnel plugin/)
+  })
+
+  it('throws error if there is an unknown error with the provider', async () => {
+    // Given
+    const config = new Config({root: ''})
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(
+      err({provider: 'ngrok', type: 'unknown', message: 'message'}),
+    )
+
+    // When
+    const got = generateURL(config, 3456)
+
+    // Then
+    await expect(got).rejects.toThrow(BugError)
+    await expect(got).rejects.toThrow(/message/)
+  })
+
+  it('throws error if there are no tunnel urls', async () => {
+    // Given
+    const config = new Config({root: ''})
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(err({provider: 'ngrok', type: 'handled-error'}))
+
+    // When
+    const got = generateURL(config, 3456)
+
+    // Then
+    await expect(got).rejects.toThrow(AbortSilentError)
+  })
+})
 
 describe('updateURLs', () => {
-  test('sends a request to update the URLs', async () => {
+  it('sends a request to update the URLs', async () => {
     // Given
-    vi.mocked(partnersRequest).mockResolvedValueOnce({appUpdate: {userErrors: []}})
+    vi.mocked(api.partners.request).mockResolvedValueOnce({appUpdate: {userErrors: []}})
     const urls = {
       applicationUrl: 'https://example.com',
       redirectUrlWhitelist: [
@@ -74,12 +142,12 @@ describe('updateURLs', () => {
     await updateURLs(urls, 'apiKey', 'token')
 
     // Then
-    expect(partnersRequest).toHaveBeenCalledWith(UpdateURLsQuery, 'token', expectedVariables)
+    expect(api.partners.request).toHaveBeenCalledWith(api.graphql.UpdateURLsQuery, 'token', expectedVariables)
   })
 
-  test('throws an error if requests has a user error', async () => {
+  it('throws an error if requests has a user error', async () => {
     // Given
-    vi.mocked(partnersRequest).mockResolvedValueOnce({appUpdate: {userErrors: [{message: 'Boom!'}]}})
+    vi.mocked(api.partners.request).mockResolvedValueOnce({appUpdate: {userErrors: [{message: 'Boom!'}]}})
     const urls = {
       applicationUrl: 'https://example.com',
       redirectUrlWhitelist: [],
@@ -89,14 +157,14 @@ describe('updateURLs', () => {
     const got = updateURLs(urls, 'apiKey', 'token')
 
     // Then
-    await expect(got).rejects.toThrow(new AbortError(`Boom!`))
+    await expect(got).rejects.toThrow(new error.Abort(`Boom!`))
   })
 })
 
 describe('getURLs', () => {
-  test('sends a request to get the URLs', async () => {
+  it('sends a request to get the URLs', async () => {
     // Given
-    vi.mocked(partnersRequest).mockResolvedValueOnce({
+    vi.mocked(api.partners.request).mockResolvedValueOnce({
       app: {applicationUrl: 'https://example.com', redirectUrlWhitelist: []},
     })
     const expectedVariables = {apiKey: 'apiKey'}
@@ -105,7 +173,7 @@ describe('getURLs', () => {
     await getURLs('apiKey', 'token')
 
     // Then
-    expect(partnersRequest).toHaveBeenCalledWith(GetURLsQuery, 'token', expectedVariables)
+    expect(api.partners.request).toHaveBeenCalledWith(api.graphql.GetURLsQuery, 'token', expectedVariables)
   })
 })
 
@@ -115,7 +183,7 @@ describe('shouldOrPromptUpdateURLs', () => {
     redirectUrlWhitelist: ['https://example.com/auth/callback'],
   }
 
-  test('returns true if the app is new', async () => {
+  it('returns true if the app is new', async () => {
     // Given
     const options = {
       currentURLs,
@@ -130,7 +198,7 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(true)
   })
 
-  test('returns true if the cached value is true (always)', async () => {
+  it('returns true if the cached value is true (always)', async () => {
     // Given
     const options = {
       currentURLs,
@@ -145,7 +213,7 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(true)
   })
 
-  test('returns false if the cached value is false (never)', async () => {
+  it('returns false if the cached value is false (never)', async () => {
     // Given
     const options = {
       currentURLs,
@@ -160,13 +228,13 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(false)
   })
 
-  test('returns true when the user selects always', async () => {
+  it('returns true when the user selects always', async () => {
     // Given
     const options = {
       currentURLs,
       appDirectory: '/path',
     }
-    vi.mocked(renderSelectPrompt).mockResolvedValue('always')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'always'})
 
     // When
     const got = await shouldOrPromptUpdateURLs(options)
@@ -175,13 +243,13 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(true)
   })
 
-  test('returns true when the user selects yes', async () => {
+  it('returns true when the user selects yes', async () => {
     // Given
     const options = {
       currentURLs,
       appDirectory: '/path',
     }
-    vi.mocked(renderSelectPrompt).mockResolvedValue('yes')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'yes'})
 
     // When
     const got = await shouldOrPromptUpdateURLs(options)
@@ -190,13 +258,13 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(true)
   })
 
-  test('returns false when the user selects never', async () => {
+  it('returns false when the user selects never', async () => {
     // Given
     const options = {
       currentURLs,
       appDirectory: '/path',
     }
-    vi.mocked(renderSelectPrompt).mockResolvedValue('never')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'never'})
 
     // When
     const got = await shouldOrPromptUpdateURLs(options)
@@ -205,13 +273,13 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(false)
   })
 
-  test('returns false when the user selects no', async () => {
+  it('returns false when the user selects no', async () => {
     // Given
     const options = {
       currentURLs,
       appDirectory: '/path',
     }
-    vi.mocked(renderSelectPrompt).mockResolvedValue('no')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'no'})
 
     // When
     const got = await shouldOrPromptUpdateURLs(options)
@@ -220,48 +288,55 @@ describe('shouldOrPromptUpdateURLs', () => {
     expect(got).toEqual(false)
   })
 
-  test('saves the response for the next time', async () => {
+  it('saves the response for the next time', async () => {
     // Given
     const options = {
       currentURLs,
       appDirectory: '/path',
     }
-    vi.mocked(renderSelectPrompt).mockResolvedValue('always')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'always'})
 
     // When
     await shouldOrPromptUpdateURLs(options)
 
     // Then
-    expect(setAppInfo).toHaveBeenNthCalledWith(1, {
+    expect(store.setAppInfo).toHaveBeenNthCalledWith(1, {
       directory: '/path',
       updateURLs: true,
     })
+  })
+
+  it('shows the current URLs', async () => {
+    // Given
+    const options = {
+      currentURLs,
+      appDirectory: '/path',
+    }
+    const outputMock = outputMocker.mockAndCaptureOutput()
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'no'})
+
+    // When
+    await shouldOrPromptUpdateURLs(options)
+
+    // Then
+    expect(outputMock.output()).toMatch(/example.com\/home/)
+    expect(outputMock.output()).toMatch(/example.com\/auth\/callback/)
   })
 })
 
 describe('generateFrontendURL', () => {
   beforeEach(() => {
-    vi.mocked(renderSelectPrompt).mockResolvedValue('yes')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'yes'})
   })
 
-  test('returns tunnelUrl when there is a tunnelUrl ignoring the tunnel provider', async () => {
-    // Given
-
-    const options = {...defaultOptions, tunnelUrl: 'https://my-tunnel-provider.io:4242'}
-
-    // When
-    const got = await generateFrontendURL(options)
-
-    // Then
-    expect(got).toEqual({frontendUrl: 'https://my-tunnel-provider.io', frontendPort: 4242, usingLocalhost: false})
-  })
-
-  test('returns tunnelUrl when there is a tunnelUrl ignoring all other true values', async () => {
+  it('returns tunnelUrl when there is a tunnelUrl ignoring all other false values', async () => {
     // Given
     const options = {
-      ...defaultOptions,
-      app: testApp(),
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: false,
+      noTunnel: false,
       tunnelUrl: 'https://my-tunnel-provider.io:4242',
+      commandConfig: new Config({root: ''}),
     }
 
     // When
@@ -271,40 +346,83 @@ describe('generateFrontendURL', () => {
     expect(got).toEqual({frontendUrl: 'https://my-tunnel-provider.io', frontendPort: 4242, usingLocalhost: false})
   })
 
-  test('generates a tunnel url with cloudflare when there is no tunnelUrl and use cloudflare is true', async () => {
+  it('returns tunnelUrl when there is a tunnelUrl ignoring all other true values', async () => {
     // Given
-    const options: FrontendURLOptions = {
-      ...defaultOptions,
-      tunnelClient: {
-        getTunnelStatus: () => ({status: 'connected', url: 'https://fake-url.cloudflare.io'}),
-        port: 3042,
-        stopTunnel: () => {},
-        provider: 'cloudflare',
-      },
+    const options = {
+      app: testApp({hasUIExtensions: () => true}),
+      tunnel: true,
+      noTunnel: true,
+      tunnelUrl: 'https://my-tunnel-provider.io:4242',
+      commandConfig: new Config({root: ''}),
     }
 
     // When
     const got = await generateFrontendURL(options)
 
     // Then
-    expect(got).toEqual({frontendUrl: 'https://fake-url.cloudflare.io', frontendPort: 3042, usingLocalhost: false})
+    expect(got).toEqual({frontendUrl: 'https://my-tunnel-provider.io', frontendPort: 4242, usingLocalhost: false})
   })
 
-  test('returns localhost if noTunnel is true', async () => {
+  it('generates a tunnel url when tunnel is true and there is no tunnelUrl and there are no extensions', async () => {
     // Given
-    const options = {...defaultOptions, noTunnel: true}
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(ok('https://fake-url.ngrok.io'))
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: true,
+      noTunnel: false,
+      commandConfig: new Config({root: ''}),
+    }
+
+    // When
+    const got = await generateFrontendURL(options)
+
+    // Then
+    expect(got).toEqual({frontendUrl: 'https://fake-url.ngrok.io', frontendPort: 3042, usingLocalhost: false})
+  })
+
+  it('returns localhost if tunnel is false and there is no tunnelUrl nor extensions', async () => {
+    // Given
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: false,
+      noTunnel: false,
+      commandConfig: new Config({root: ''}),
+    }
 
     // When
     const got = await generateFrontendURL(options)
 
     // Then
     expect(got).toEqual({frontendUrl: 'http://localhost', frontendPort: 3042, usingLocalhost: true})
-    expect(renderSelectPrompt).not.toBeCalled()
+    expect(ui.prompt).not.toBeCalled()
   })
 
-  test('raises error if tunnelUrl does not include port', async () => {
+  it('returns localhost if noTunnel is true even if there are extensions', async () => {
     // Given
-    const options = {...defaultOptions, tunnelUrl: 'https://my-tunnel-provider.io'}
+    const options = {
+      app: testApp({hasUIExtensions: () => true}),
+      tunnel: false,
+      noTunnel: true,
+      commandConfig: new Config({root: ''}),
+    }
+
+    // When
+    const got = await generateFrontendURL(options)
+
+    // Then
+    expect(got).toEqual({frontendUrl: 'http://localhost', frontendPort: 3042, usingLocalhost: true})
+    expect(ui.prompt).not.toBeCalled()
+  })
+
+  it('raises error if tunnelUrl does not include port', async () => {
+    // Given
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: false,
+      noTunnel: false,
+      tunnelUrl: 'https://my-tunnel-provider.io',
+      commandConfig: new Config({root: ''}),
+    }
 
     // When
     const got = generateFrontendURL(options)
@@ -313,25 +431,74 @@ describe('generateFrontendURL', () => {
     await expect(got).rejects.toThrow(/Invalid tunnel URL/)
   })
 
-  test('Returns a gitpod url if we are in a gitpod environment', async () => {
+  it('cancels execution if you select not to continue in the plugin prompt', async () => {
     // Given
-    vi.mocked(gitpodURL).mockReturnValue('https://gitpod.url.fqdn.com')
+    vi.mocked(ui.prompt).mockResolvedValue({value: 'cancel'})
+    const options = {
+      app: testApp({hasUIExtensions: () => true}),
+      tunnel: true,
+      noTunnel: false,
+      commandConfig: new Config({root: ''}),
+    }
 
     // When
-    const got = await generateFrontendURL(defaultOptions)
+    const got = generateFrontendURL(options)
+
+    // Then
+    await expect(got).rejects.toThrow()
+  })
+
+  it('Reuses tunnel option if cached even if tunnel is false and there are no extensions', async () => {
+    // Given
+    vi.mocked(plugins.runTunnelPlugin).mockResolvedValueOnce(ok('https://fake-url.ngrok.io'))
+    const options = {
+      app: testApp({hasUIExtensions: () => false, directory: '/app-path'}),
+      tunnel: false,
+      noTunnel: false,
+      cachedTunnelPlugin: 'ngrok',
+      commandConfig: new Config({root: ''}),
+    }
+
+    // When
+    const got = await generateFrontendURL(options)
+
+    // Then
+    expect(got).toEqual({frontendUrl: 'https://fake-url.ngrok.io', frontendPort: 3042, usingLocalhost: false})
+    expect(store.setAppInfo).not.toBeCalled()
+    expect(ui.prompt).not.toBeCalled()
+  })
+
+  it('Returns a gitpod url if we are in a gitpod environment', async () => {
+    // Given
+    vi.mocked(environment.local.gitpodURL).mockReturnValue('https://gitpod.url.fqdn.com')
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: false,
+      noTunnel: false,
+      commandConfig: new Config({root: ''}),
+    }
+
+    // When
+    const got = await generateFrontendURL(options)
 
     // Then
     expect(got).toEqual({frontendUrl: 'https://4040-gitpod.url.fqdn.com', frontendPort: 4040, usingLocalhost: false})
-    expect(setAppInfo).not.toBeCalled()
-    expect(renderSelectPrompt).not.toBeCalled()
+    expect(store.setAppInfo).not.toBeCalled()
+    expect(ui.prompt).not.toBeCalled()
   })
 
-  test('Returns a codespace url if we are in a codespace environment', async () => {
+  it('Returns a codespace url if we are in a codespace environment', async () => {
     // Given
-    vi.mocked(codespaceURL).mockReturnValue('codespace.url.fqdn.com')
+    vi.mocked(environment.local.codespaceURL).mockReturnValue('codespace.url.fqdn.com')
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: false,
+      noTunnel: false,
+      commandConfig: new Config({root: ''}),
+    }
 
     // When
-    const got = await generateFrontendURL(defaultOptions)
+    const got = await generateFrontendURL(options)
 
     // Then
     expect(got).toEqual({
@@ -339,19 +506,23 @@ describe('generateFrontendURL', () => {
       frontendPort: 4040,
       usingLocalhost: false,
     })
-    expect(setAppInfo).not.toBeCalled()
-    expect(renderSelectPrompt).not.toBeCalled()
+    expect(store.setAppInfo).not.toBeCalled()
+    expect(ui.prompt).not.toBeCalled()
   })
 
-  test('Returns a cli spin url if we are in a spin environment running a non 1p app', async () => {
+  it('Returns a spin url if we are in a spin environment', async () => {
     // Given
-    vi.mocked(isSpin).mockReturnValue(true)
-    vi.mocked(spinFqdn).mockResolvedValue('spin.domain.dev')
-    vi.mocked(appPort).mockReturnValue(undefined)
-    vi.mocked(appHost).mockReturnValue(undefined)
+    vi.mocked(environment.spin.isSpin).mockReturnValue(true)
+    vi.mocked(environment.spin.fqdn).mockResolvedValue('spin.domain.dev')
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: false,
+      noTunnel: false,
+      commandConfig: new Config({root: ''}),
+    }
 
     // When
-    const got = await generateFrontendURL(defaultOptions)
+    const got = await generateFrontendURL(options)
 
     // Then
     expect(got).toEqual({
@@ -359,33 +530,20 @@ describe('generateFrontendURL', () => {
       frontendPort: 4040,
       usingLocalhost: false,
     })
-    expect(setAppInfo).not.toBeCalled()
-    expect(renderSelectPrompt).not.toBeCalled()
+    expect(store.setAppInfo).not.toBeCalled()
+    expect(ui.prompt).not.toBeCalled()
   })
 
-  test('Returns a 1p app spin url if we are in a spin environment running a 1p app', async () => {
+  it('Returns a custom tunnel url if we are in a spin environment but a custom tunnel option is active', async () => {
     // Given
-    vi.mocked(isSpin).mockReturnValue(true)
-    vi.mocked(appPort).mockReturnValue(1234)
-    vi.mocked(appHost).mockReturnValue('1p-app-host.spin.domain.dev')
-
-    // When
-    const got = await generateFrontendURL(defaultOptions)
-
-    // Then
-    expect(got).toEqual({
-      frontendUrl: 'https://1p-app-host.spin.domain.dev',
-      frontendPort: 1234,
-      usingLocalhost: false,
-    })
-    expect(setAppInfo).not.toBeCalled()
-    expect(renderSelectPrompt).not.toBeCalled()
-  })
-
-  test('Returns a custom tunnel url if we are in a spin environment but a custom tunnel option is active', async () => {
-    // Given
-    vi.mocked(isSpin).mockReturnValue(true)
-    const options = {...defaultOptions, tunnelUrl: 'https://my-tunnel-provider.io:4242'}
+    vi.mocked(environment.spin.isSpin).mockReturnValue(true)
+    const options = {
+      app: testApp({hasUIExtensions: () => false}),
+      tunnel: true,
+      noTunnel: false,
+      tunnelUrl: 'https://my-tunnel-provider.io:4242',
+      commandConfig: new Config({root: ''}),
+    }
 
     // When
     const got = await generateFrontendURL(options)
@@ -396,7 +554,7 @@ describe('generateFrontendURL', () => {
 })
 
 describe('generatePartnersURLs', () => {
-  test('Returns the default values without an override', () => {
+  it('Returns the default values without an override', () => {
     const applicationUrl = 'http://my-base-url'
 
     const got = generatePartnersURLs(applicationUrl)
@@ -411,7 +569,7 @@ describe('generatePartnersURLs', () => {
     })
   })
 
-  test('Returns just the override value when set as a string', () => {
+  it('Returns just the override value when set', () => {
     const applicationUrl = 'http://my-base-url'
     const overridePath = '/my/custom/path'
 
@@ -421,49 +579,5 @@ describe('generatePartnersURLs', () => {
       applicationUrl,
       redirectUrlWhitelist: [`${applicationUrl}${overridePath}`],
     })
-  })
-
-  test('Returns just the override values when set as an array', () => {
-    const applicationUrl = 'http://my-base-url'
-    const overridePath = ['/my/custom/path1', '/my/custom/path2']
-
-    const got = generatePartnersURLs(applicationUrl, overridePath)
-
-    expect(got).toMatchObject({
-      applicationUrl,
-      redirectUrlWhitelist: [`${applicationUrl}${overridePath[0]}`, `${applicationUrl}${overridePath[1]}`],
-    })
-  })
-})
-
-describe('validatePartnersURLs', () => {
-  test('does not throw any error when the URLs are valid', () => {
-    // Given
-    const applicationUrl = 'http://example.com'
-    const redirectUrlWhitelist = ['http://example.com/callback1', 'http://example.com/callback2']
-    const urls: PartnersURLs = {applicationUrl, redirectUrlWhitelist}
-
-    // When/Then
-    validatePartnersURLs(urls)
-  })
-
-  test('it raises an error when the application URL is not valid', () => {
-    // Given
-    const applicationUrl = 'wrong'
-    const redirectUrlWhitelist = ['http://example.com/callback1', 'http://example.com/callback2']
-    const urls: PartnersURLs = {applicationUrl, redirectUrlWhitelist}
-
-    // When/Then
-    expect(() => validatePartnersURLs(urls)).toThrow(/Invalid application URL/)
-  })
-
-  test('it raises an error when the redirection URLs are not valid', () => {
-    // Given
-    const applicationUrl = 'http://example.com'
-    const redirectUrlWhitelist = ['http://example.com/callback1', 'wrong']
-    const urls: PartnersURLs = {applicationUrl, redirectUrlWhitelist}
-
-    // When/Then
-    expect(() => validatePartnersURLs(urls)).toThrow(/Invalid redirection URLs/)
   })
 })

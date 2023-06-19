@@ -1,8 +1,8 @@
 import {parseCommandContent} from './prerun.js'
-import {describe, expect, test} from 'vitest'
+import {describe, expect, it} from 'vitest'
 
 describe('parseCommandContent', () => {
-  test('when a create command is used should return the correct command content', async () => {
+  it('when a create command is used should return the correct command content', async () => {
     // Given
     const cmdInfo = {
       id: 'init',
@@ -20,12 +20,12 @@ describe('parseCommandContent', () => {
     expect(got.alias).toBeUndefined()
   })
 
-  test('when a normal command is used without topic should return the correct command content', async () => {
+  it('when a normal command is used without topic should return the correct command content', async () => {
     // Given
     const cmdInfo = {
       id: 'upgrade',
       aliases: [],
-      pluginAlias: '@shopify/cli',
+      pluginAlias: '@shopify/cli-main',
     }
 
     // When
@@ -38,12 +38,12 @@ describe('parseCommandContent', () => {
     expect(got.alias).toBeUndefined()
   })
 
-  test('when a normal command is with topic should return the correct command content', async () => {
+  it('when a normal command is with topic should return the correct command content', async () => {
     // Given
     const cmdInfo = {
       id: 'app:dev',
       aliases: [],
-      pluginAlias: '@shopify/cli',
+      pluginAlias: '@shopify/cli-main',
     }
 
     // When
@@ -56,12 +56,12 @@ describe('parseCommandContent', () => {
     expect(got.alias).toBeUndefined()
   })
 
-  test('when a normal command is with alias should return the correct command content', async () => {
+  it('when a normal command is with alias should return the correct command content', async () => {
     // Given
     const cmdInfo = {
       id: 'upgrade',
       aliases: ['upgradeAlias'],
-      pluginAlias: '@shopify/cli',
+      pluginAlias: '@shopify/cli-main',
     }
     process.argv = ['upgradeAlias']
 

@@ -1,19 +1,9 @@
 import {updateURLsPrompt} from '../../prompts/dev.js'
 import {AppInterface} from '../../models/app/app.js'
-import {UpdateURLsQuery, UpdateURLsQuerySchema, UpdateURLsQueryVariables} from '../../api/graphql/update_urls.js'
-import {GetURLsQuery, GetURLsQuerySchema, GetURLsQueryVariables} from '../../api/graphql/get_urls.js'
-import {setAppInfo} from '../local-storage.js'
-import {AbortError, BugError} from '@shopify/cli-kit/node/error'
+import {api, environment, output, plugins, store} from '@shopify/cli-kit'
+import {AbortError, AbortSilentError, BugError} from '@shopify/cli-kit/node/error'
 import {Config} from '@oclif/core'
 import {getAvailableTCPPort} from '@shopify/cli-kit/node/tcp'
-import {isValidURL} from '@shopify/cli-kit/common/url'
-import {partnersRequest} from '@shopify/cli-kit/node/api/partners'
-import {appHost, appPort, isSpin, spinFqdn} from '@shopify/cli-kit/node/context/spin'
-import {codespaceURL, gitpodURL} from '@shopify/cli-kit/node/context/local'
-import {fanoutHooks} from '@shopify/cli-kit/node/plugins'
-import {terminalSupportsRawMode} from '@shopify/cli-kit/node/system'
-import {TunnelClient} from '@shopify/cli-kit/node/plugins/tunnel'
-import {outputDebug} from '@shopify/cli-kit/node/output'
 
 export interface PartnersURLs {
   applicationUrl: string
@@ -22,10 +12,11 @@ export interface PartnersURLs {
 
 export interface FrontendURLOptions {
   app: AppInterface
+  tunnel: boolean
   noTunnel: boolean
   tunnelUrl?: string
+  cachedTunnelPlugin?: string
   commandConfig: Config
-  tunnelClient: TunnelClient | undefined
 }
 
 export interface FrontendURLResult {
@@ -42,32 +33,35 @@ export interface FrontendURLResult {
  *   No need for tunnel. In case problems with that configuration, the flags Tunnel or Custom Tunnel url could be used
  * - If a tunnelUrl is provided, that takes preference and is returned as the frontendURL
  * - If noTunnel is true, that takes second preference and localhost is used
- * - Otherwise, a tunnel is created. (by default using cloudflare)
+ * - A Tunnel is created then if any of these conditions are met:
+ *   - Tunnel flag is true
+ *   - The app has UI extensions
+ *   - In a previous run, the user selected to always use a tunnel (cachedTunnelPlugin)
+ * - Otherwise, localhost is used
  *
  * If there is no cached tunnel plugin and a tunnel is necessary, we'll ask the user to confirm.
  */
 export async function generateFrontendURL(options: FrontendURLOptions): Promise<FrontendURLResult> {
   let frontendPort = 4040
-  let frontendUrl = ''
+  let frontendUrl: string
   let usingLocalhost = false
+  const hasExtensions = options.app.hasUIExtensions()
 
-  if (codespaceURL()) {
-    frontendUrl = `https://${codespaceURL()}-${frontendPort}.githubpreview.dev`
+  const needsTunnel = (hasExtensions || options.tunnel || options.cachedTunnelPlugin) && !options.noTunnel
+
+  if (environment.local.codespaceURL()) {
+    frontendUrl = `https://${environment.local.codespaceURL()}-${frontendPort}.githubpreview.dev`
     return {frontendUrl, frontendPort, usingLocalhost}
   }
 
-  if (gitpodURL()) {
-    const defaultUrl = gitpodURL()?.replace('https://', '')
+  if (environment.local.gitpodURL()) {
+    const defaultUrl = environment.local.gitpodURL()?.replace('https://', '')
     frontendUrl = `https://${frontendPort}-${defaultUrl}`
     return {frontendUrl, frontendPort, usingLocalhost}
   }
 
-  if (isSpin() && !options.tunnelUrl) {
-    frontendUrl = `https://cli.${await spinFqdn()}`
-    if (appPort() !== undefined) {
-      frontendPort = appPort() ?? frontendPort
-      frontendUrl = `https://${appHost()}`
-    }
+  if (environment.spin.isSpin() && !options.tunnelUrl) {
+    frontendUrl = `https://cli.${await environment.spin.fqdn()}`
     return {frontendUrl, frontendPort, usingLocalhost}
   }
 
@@ -81,56 +75,32 @@ export async function generateFrontendURL(options: FrontendURLOptions): Promise<
     return {frontendUrl, frontendPort, usingLocalhost}
   }
 
-  if (options.noTunnel) {
+  if (needsTunnel) {
+    frontendPort = await getAvailableTCPPort()
+    frontendUrl = await generateURL(options.commandConfig, frontendPort)
+  } else {
     frontendPort = await getAvailableTCPPort()
     frontendUrl = 'http://localhost'
     usingLocalhost = true
-  } else if (options.tunnelClient) {
-    const url = await pollTunnelURL(options.tunnelClient)
-    frontendPort = options.tunnelClient.port
-    frontendUrl = url
   }
 
   return {frontendUrl, frontendPort, usingLocalhost}
 }
 
-/**
- * Poll the tunnel provider every 0.5 until an URL or error is returned.
- */
-async function pollTunnelURL(tunnelClient: TunnelClient): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    let retries = 0
-    const pollTunnelStatus = async () => {
-      const result = tunnelClient.getTunnelStatus()
-      outputDebug(`Polling tunnel status for ${tunnelClient.provider} (attempt ${retries}): ${result.status}`)
-      if (result.status === 'error') return reject(new BugError(result.message, result.tryMessage))
-      if (result.status === 'connected') {
-        resolve(result.url)
-      } else {
-        retries += 1
-        startPolling()
-      }
-    }
-    const startPolling = () => {
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
-      setTimeout(pollTunnelStatus, 500)
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    pollTunnelStatus()
-  })
+export async function generateURL(config: Config, frontendPort: number): Promise<string> {
+  // For the moment we assume to always have ngrok, this will change in a future PR
+  // and will need to use "getListOfTunnelPlugins" to find the available tunnel plugins
+  const provider = 'ngrok'
+  return (await plugins.runTunnelPlugin(config, frontendPort, provider))
+    .doOnOk(() => output.success('The tunnel is running and you can now view your app'))
+    .mapError(mapRunTunnelPluginError)
+    .valueOrThrow()
 }
 
-export function generatePartnersURLs(baseURL: string, authCallbackPath?: string | string[]): PartnersURLs {
+export function generatePartnersURLs(baseURL: string, authCallbackPath?: string): PartnersURLs {
   let redirectUrlWhitelist: string[]
   if (authCallbackPath && authCallbackPath.length > 0) {
-    const authCallbackPaths = Array.isArray(authCallbackPath) ? authCallbackPath : [authCallbackPath]
-    redirectUrlWhitelist = authCallbackPaths.reduce<string[]>((acc, path) => {
-      if (path && path.length > 0) {
-        acc.push(`${baseURL}${path}`)
-      }
-      return acc
-    }, [])
+    redirectUrlWhitelist = [`${baseURL}${authCallbackPath}`]
   } else {
     redirectUrlWhitelist = [
       `${baseURL}/auth/callback`,
@@ -146,9 +116,9 @@ export function generatePartnersURLs(baseURL: string, authCallbackPath?: string 
 }
 
 export async function updateURLs(urls: PartnersURLs, apiKey: string, token: string): Promise<void> {
-  const variables: UpdateURLsQueryVariables = {apiKey, ...urls}
-  const query = UpdateURLsQuery
-  const result: UpdateURLsQuerySchema = await partnersRequest(query, token, variables)
+  const variables: api.graphql.UpdateURLsQueryVariables = {apiKey, ...urls}
+  const query = api.graphql.UpdateURLsQuery
+  const result: api.graphql.UpdateURLsQuerySchema = await api.partners.request(query, token, variables)
   if (result.appUpdate.userErrors.length > 0) {
     const errors = result.appUpdate.userErrors.map((error) => error.message).join(', ')
     throw new AbortError(errors)
@@ -156,9 +126,9 @@ export async function updateURLs(urls: PartnersURLs, apiKey: string, token: stri
 }
 
 export async function getURLs(apiKey: string, token: string): Promise<PartnersURLs> {
-  const variables: GetURLsQueryVariables = {apiKey}
-  const query = GetURLsQuery
-  const result: GetURLsQuerySchema = await partnersRequest(query, token, variables)
+  const variables: api.graphql.GetURLsQueryVariables = {apiKey}
+  const query = api.graphql.GetURLsQuery
+  const result: api.graphql.GetURLsQuerySchema = await api.partners.request(query, token, variables)
   return {applicationUrl: result.app.applicationUrl, redirectUrlWhitelist: result.app.redirectUrlWhitelist}
 }
 
@@ -170,13 +140,14 @@ export interface ShouldOrPromptUpdateURLsOptions {
 }
 
 export async function shouldOrPromptUpdateURLs(options: ShouldOrPromptUpdateURLsOptions): Promise<boolean> {
-  if (options.newApp || !terminalSupportsRawMode()) return true
+  if (options.newApp) return true
   let shouldUpdate: boolean = options.cachedUpdateURLs === true
   if (options.cachedUpdateURLs === undefined) {
-    const response = await updateURLsPrompt(
-      options.currentURLs.applicationUrl,
-      options.currentURLs.redirectUrlWhitelist,
-    )
+    output.info(`\nYour app's URL currently is:\n  ${options.currentURLs.applicationUrl}`)
+    output.info(`\nYour app's redirect URLs currently are:`)
+    options.currentURLs.redirectUrlWhitelist.forEach((url) => output.info(`  ${url}`))
+    output.newline()
+    const response = await updateURLsPrompt()
     let newUpdateURLs: boolean | undefined
     /* eslint-disable no-fallthrough */
     switch (response) {
@@ -191,44 +162,20 @@ export async function shouldOrPromptUpdateURLs(options: ShouldOrPromptUpdateURLs
         shouldUpdate = false
     }
     /* eslint-enable no-fallthrough */
-    setAppInfo({directory: options.appDirectory, updateURLs: newUpdateURLs})
+    await store.setAppInfo({directory: options.appDirectory, updateURLs: newUpdateURLs})
   }
   return shouldUpdate
 }
 
-export function validatePartnersURLs(urls: PartnersURLs): void {
-  if (!isValidURL(urls.applicationUrl))
-    throw new AbortError(`Invalid application URL: ${urls.applicationUrl}`, 'Valid format: "https://example.com"')
-
-  urls.redirectUrlWhitelist.forEach((url) => {
-    if (!isValidURL(url))
-      throw new AbortError(
-        `Invalid redirection URLs: ${urls.redirectUrlWhitelist}`,
-        'Valid format: "https://example.com/callback1,https://example.com/callback2"',
-      )
-  })
-}
-
-export async function startTunnelPlugin(config: Config, port: number, provider: string): Promise<TunnelClient> {
-  const hooks = await fanoutHooks(config, 'tunnel_start', {port, provider})
-  const results = Object.values(hooks).filter(
-    (tunnelResponse) => !tunnelResponse?.isErr() || tunnelResponse.error.type !== 'invalid-provider',
-  )
-  if (results.length > 1) throw new BugError(`Multiple tunnel plugins for ${provider} found`)
-  const first = results[0]
-  if (!first) throw new BugError(`We couldn't find the ${provider} tunnel plugin`)
-  if (first.isErr()) {
-    throw new AbortError(`${provider} failed to start the tunnel.\n${first.error.message}`, [
-      'What to try:',
-      {
-        list: {
-          items: [
-            ['Try to run the command again'],
-            ['Add the flag', {command: '--tunnel-url {URL}'}, 'to use a custom tunnel URL'],
-          ],
-        },
-      },
-    ])
+function mapRunTunnelPluginError(tunnelPluginError: plugins.TunnelPluginError) {
+  switch (tunnelPluginError.type) {
+    case 'no-provider':
+      return new BugError(`We couldn't find the ${tunnelPluginError.provider} tunnel plugin`)
+    case 'multiple-urls':
+      return new BugError('Multiple tunnel plugins for ngrok found')
+    case 'unknown':
+      return new BugError(`${tunnelPluginError.provider} failed to start the tunnel.\n${tunnelPluginError.message}`)
+    default:
+      return new AbortSilentError()
   }
-  return first.value
 }
