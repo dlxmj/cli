@@ -1,10 +1,11 @@
-import {UIExtensionPayload, ExtensionsEndpointPayload} from './models.js'
+import {UIExtensionPayload, ExtensionsEndpointPayload, DevNewExtensionPointSchema} from './models.js'
 import {ExtensionDevOptions} from '../../extension.js'
-import {getUIExtensionPayload} from '../payload.js'
-import {UIExtension} from '../../../../models/app/extensions.js'
+import {getUIExtensionPayload, isNewExtensionPointsSchema} from '../payload.js'
+import {buildAppURLForMobile, buildAppURLForWeb} from '../../../../utilities/app/app-url.js'
+import {ExtensionInstance} from '../../../../models/extensions/extension-instance.js'
 import {deepMergeObjects} from '@shopify/cli-kit/common/object'
-import {output} from '@shopify/cli-kit'
-import {EventEmitter} from 'node:events'
+import {outputDebug, outputContent} from '@shopify/cli-kit/node/output'
+import {EventEmitter} from 'events'
 
 export interface ExtensionsPayloadStoreOptions extends ExtensionDevOptions {
   websocketURL: string
@@ -19,9 +20,13 @@ export async function getExtensionsPayloadStoreRawPayload(
 ): Promise<ExtensionsEndpointPayload> {
   return {
     app: {
+      title: options.app.name,
       apiKey: options.apiKey,
+      url: buildAppURLForWeb(options.storeFqdn, options.url),
+      mobileUrl: buildAppURLForMobile(options.storeFqdn, options.apiKey),
     },
-    version: '3',
+    appId: options.id,
+    version: options.manifestVersion,
     root: {
       url: new URL('/extensions', options.url).toString(),
     },
@@ -50,6 +55,7 @@ export class ExtensionsPayloadStore extends EventEmitter {
     const rawPayload = this.getRawPayload()
     return {
       app: rawPayload.app,
+      appId: rawPayload.appId,
       store: rawPayload.store,
       extensions: rawPayload.extensions,
     }
@@ -76,25 +82,63 @@ export class ExtensionsPayloadStore extends EventEmitter {
   updateExtensions(extensions: UIExtensionPayload[]) {
     const updatedExtensionsPayload = this.rawPayload.extensions.map((rawPayloadExtension) => {
       const foundExtension = extensions.find((ext) => ext.uuid === rawPayloadExtension.uuid)
+
       if (foundExtension) {
+        // We can't do a simple union or replacement when it comes to extension points array
+        // We need special logic to merge extension points only when the target matches
+        if (
+          isNewExtensionPointsSchema(foundExtension.extensionPoints) &&
+          isNewExtensionPointsSchema(rawPayloadExtension.extensionPoints)
+        ) {
+          const foundExtensionPointsPayloadMap = foundExtension.extensionPoints.reduce((acc, ex) => {
+            return {...acc, [ex.target]: ex}
+          }, {} as {[key: string]: DevNewExtensionPointSchema})
+
+          rawPayloadExtension.extensionPoints = deepMergeObjects(
+            rawPayloadExtension.extensionPoints,
+            foundExtension.extensionPoints,
+            (destinationArray) => {
+              return (destinationArray as DevNewExtensionPointSchema[]).map((extensionPoint) => {
+                const extensionPointPayload = foundExtensionPointsPayloadMap[extensionPoint.target]
+                if (extensionPointPayload) {
+                  return deepMergeObjects(extensionPoint, extensionPointPayload)
+                }
+                return extensionPoint
+              })
+            },
+          )
+
+          const {extensionPoints, ...rest} = foundExtension
+          return deepMergeObjects(rawPayloadExtension, rest)
+        }
+
         return deepMergeObjects(rawPayloadExtension, foundExtension)
-      } else {
-        return rawPayloadExtension
       }
+
+      return rawPayloadExtension
     })
+
     this.rawPayload = {
       ...this.rawPayload,
       extensions: updatedExtensionsPayload,
     }
+
     this.emitUpdate(extensions.map((extension) => extension.uuid))
   }
 
-  async updateExtension(extension: UIExtension, development?: Partial<UIExtensionPayload['development']>) {
+  async updateExtension(
+    extension: ExtensionInstance,
+    options: ExtensionDevOptions,
+    development?: Partial<UIExtensionPayload['development']>,
+  ) {
     const payloadExtensions = this.rawPayload.extensions
     const index = payloadExtensions.findIndex((extensionPayload) => extensionPayload.uuid === extension.devUUID)
 
     if (index === -1) {
-      output.debug(output.content`Could not updateExtension() for extension with uuid: ${extension.devUUID}`)
+      outputDebug(
+        outputContent`Could not updateExtension() for extension with uuid: ${extension.devUUID}`,
+        options.stderr,
+      )
       return
     }
 

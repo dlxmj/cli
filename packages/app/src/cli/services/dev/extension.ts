@@ -4,9 +4,10 @@ import {setupBundlerAndFileWatcher} from './extension/bundler.js'
 import {setupHTTPServer} from './extension/server.js'
 import {ExtensionsPayloadStore, getExtensionsPayloadStoreRawPayload} from './extension/payload/store.js'
 import {AppInterface} from '../../models/app/app.js'
-import {UIExtension} from '../../models/app/extensions.js'
-import {output, abort} from '@shopify/cli-kit'
-import {Writable} from 'node:stream'
+import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
+import {AbortSignal} from '@shopify/cli-kit/node/abort'
+import {outputDebug} from '@shopify/cli-kit/node/output'
+import {Writable} from 'stream'
 
 export interface ExtensionDevOptions {
   /**
@@ -21,7 +22,7 @@ export interface ExtensionDevOptions {
   /**
    * Signal to abort the build process.
    */
-  signal: abort.Signal
+  signal: AbortSignal
 
   /**
    * Overrides the default build directory.
@@ -31,12 +32,17 @@ export interface ExtensionDevOptions {
   /**
    * The extension to be built.
    */
-  extensions: UIExtension[]
+  extensions: ExtensionInstance[]
 
   /**
    * The app that contains the extension.
    */
   app: AppInterface
+
+  /**
+   * The ID of the app that contains the extension.
+   */
+  id?: string
 
   /**
    * The app identifier
@@ -55,7 +61,7 @@ export interface ExtensionDevOptions {
   port: number
 
   /**
-   * The development store where the extension wants to be previewed
+   * The store where the extension wants to be previewed
    */
   storeFqdn: string
 
@@ -75,6 +81,12 @@ export interface ExtensionDevOptions {
    * If not provided the first product in the store will be used
    */
   subscriptionProductUrl?: string
+
+  /**
+   * Fixed version for the Dev Server's manifest.
+   * This is exposed in the JSON payload for clients connecting to the Dev Server
+   */
+  manifestVersion: string
 }
 
 export async function devUIExtensions(options: ExtensionDevOptions): Promise<void> {
@@ -90,15 +102,12 @@ export async function devUIExtensions(options: ExtensionDevOptions): Promise<voi
   const payloadStoreRawPayload = await getExtensionsPayloadStoreRawPayload(payloadStoreOptions)
   const payloadStore = new ExtensionsPayloadStore(payloadStoreRawPayload, payloadStoreOptions)
 
-  output.debug(`Setting up the UI extensions HTTP server...`)
+  outputDebug(`Setting up the UI extensions HTTP server...`, options.stdout)
   const httpServer = setupHTTPServer({devOptions, payloadStore})
 
-  output.debug(`Setting up the UI extensions Websocket server...`)
-  const websocketConnection = setupWebsocketConnection({
-    httpServer,
-    payloadStore,
-  })
-  output.debug(`Setting up the UI extensions bundler and file watching...`)
+  outputDebug(`Setting up the UI extensions Websocket server...`, options.stdout)
+  const websocketConnection = setupWebsocketConnection({...options, httpServer, payloadStore})
+  outputDebug(`Setting up the UI extensions bundler and file watching...`, options.stdout)
   const fileWatcher = await setupBundlerAndFileWatcher({devOptions, payloadStore})
 
   options.signal.addEventListener('abort', () => {

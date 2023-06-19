@@ -1,30 +1,32 @@
 {
   "name": "@shopify/theme",
-  "version": "3.23.0",
+  "version": "3.47.0-pre.0",
   "private": false,
   "description": "Utilities for building and publishing themes",
   "homepage": "https://github.com/shopify/cli#readme",
   "bugs": {
     "url": "https://github.com/Shopify/cli/issues"
   },
-  "type": "module",
-  "license": "MIT",
-  "files": [
-    "/dist"
-  ],
-  "publishConfig": {
-    "access": "public",
-    "@shopify:registry": "https://registry.npmjs.org"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Shopify/cli/edit/main/packages/theme"
   },
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "/dist",
+    "/oclif.manifest.json"
+  ],
   "scripts": {
-    "prepack": "cross-env NODE_ENV=production yarn nx build && cp ../../README.md README.md",
     "build": "nx build",
     "clean": "nx clean",
     "lint": "nx lint",
     "lint:fix": "nx lint:fix",
+    "prepack": "cross-env NODE_ENV=production pnpm nx build && cp ../../README.md README.md",
     "test": "nx run theme:test",
     "test:watch": "nx test:watch",
-    "type-check": "nx type-check"
+    "type-check": "nx type-check",
+    "schema:generate": "node scripts/schema/generate.js && pnpm nx lint:fix"
   },
   "eslintConfig": {
     "extends": [
@@ -32,13 +34,16 @@
     ]
   },
   "dependencies": {
-    "@oclif/core": "1.9.2",
-    "@shopify/cli-kit": "3.23.0"
+    "@oclif/core": "2.8.5",
+    "@shopify/cli-kit": "3.47.0-pre.0"
   },
   "devDependencies": {
-    "vitest": "^0.22.1"
+    "@types/node": "14.18.36",
+    "json-schema-to-zod": "0.6.3",
+    "vite": "^4.3.9",
+    "vitest": "^0.31.0",
+    "node-stream-zip": "^1.15.0"
   },
-  "engine-strict": true,
   "engines": {
     "node": ">=14.17.0"
   },
@@ -47,11 +52,12 @@
     "linux",
     "win32"
   ],
+  "publishConfig": {
+    "@shopify:registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "engine-strict": true,
   "oclif": {
     "commands": "dist/cli/commands"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Shopify/cli/edit/main/packages/theme"
   }
 }

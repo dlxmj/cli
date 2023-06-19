@@ -1,5 +1,35 @@
 # @shopify/ui-extensions-server-kit
 
+## 4.2.0
+
+### Minor Changes
+
+- 2c6e98652: Enable ui-extensions-server-kit to send translated strings for the requested locales
+
+## 4.1.0
+
+### Minor Changes
+
+- 335a96a24: Improved dev console with new UX & functionality. New functionality: Preview app link and QRCode, better post purchase extension instructions, copy button for all preview links, support for upcoming UI extension changes
+
+## 4.0.1
+
+### Patch Changes
+
+- 10b86c459: Expose missing API types
+
+## 4.0.0
+
+### Major Changes
+
+- feee9215: Remove APIClient from ui-extensions-server-kit. APIClient is not used by the package and although it's exposed externally, all its functionality is also handled by ExtensionServerClient
+
+## 3.25.0
+
+## 3.24.1
+
+## 3.24.0
+
 ## 3.23.0
 
 ## 3.22.1

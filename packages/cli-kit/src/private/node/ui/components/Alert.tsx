@@ -1,53 +1,67 @@
 import {Banner, BannerType} from './Banner.js'
 import {Link} from './Link.js'
 import {List} from './List.js'
-import {TokenItem, TokenizedText} from './TokenizedText.js'
+import {BoldToken, InlineToken, LinkToken, TokenItem, TokenizedText} from './TokenizedText.js'
 import {Box, Text} from 'ink'
-import React from 'react'
+import React, {FunctionComponent} from 'react'
+
+export interface CustomSection {
+  title?: string
+  body: TokenItem
+}
 
 export interface AlertProps {
   type: Exclude<BannerType, 'error' | 'external_error'>
-  headline: string
+  headline?: TokenItem<Exclude<InlineToken, LinkToken | BoldToken>>
   body?: TokenItem
-  nextSteps?: TokenItem[]
-  reference?: TokenItem[]
+  nextSteps?: TokenItem<InlineToken>[]
+  reference?: TokenItem<InlineToken>[]
   link?: {
     label: string
     url: string
   }
   orderedNextSteps?: boolean
+  customSections?: CustomSection[]
 }
 
-const Alert: React.FC<AlertProps> = ({type, headline, body, nextSteps, reference, link, orderedNextSteps = false}) => {
+const Alert: FunctionComponent<AlertProps> = ({
+  type,
+  headline,
+  body,
+  nextSteps,
+  reference,
+  link,
+  customSections,
+  orderedNextSteps = false,
+}) => {
   return (
-    <Banner type={type} marginY={1}>
-      <Box>
-        <Text>{headline}</Text>
-      </Box>
+    <Banner type={type}>
+      {headline ? (
+        <Text bold>
+          <TokenizedText item={headline} />
+        </Text>
+      ) : null}
 
-      {body && (
-        <Box marginTop={1}>
-          <TokenizedText item={body} />
-        </Box>
-      )}
+      {body ? <TokenizedText item={body} /> : null}
 
-      {nextSteps && (
-        <Box marginTop={1}>
-          <List title="Next steps" items={nextSteps} ordered={orderedNextSteps} />
-        </Box>
-      )}
+      {nextSteps && nextSteps.length > 0 ? (
+        <List title="Next steps" items={nextSteps} ordered={orderedNextSteps} />
+      ) : null}
 
-      {reference && (
-        <Box marginTop={1}>
-          <List title="Reference" items={reference} />
-        </Box>
-      )}
+      {reference && reference.length > 0 ? <List title="Reference" items={reference} /> : null}
 
-      {link && (
-        <Box marginTop={1}>
-          <Link url={link.url} label={link.label} />
+      {link ? <Link url={link.url} label={link.label} /> : null}
+
+      {customSections && customSections.length > 0 ? (
+        <Box flexDirection="column" gap={1}>
+          {customSections.map((section, index) => (
+            <Box key={index} flexDirection="column">
+              {section.title ? <Text bold>{section.title}</Text> : null}
+              <TokenizedText item={section.body} />
+            </Box>
+          ))}
         </Box>
-      )}
+      ) : null}
     </Banner>
   )
 }

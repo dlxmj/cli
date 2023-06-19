@@ -1,50 +1,38 @@
 import {info} from './info.js'
 import {fetchOrgAndApps, fetchOrganizations} from './dev/fetch.js'
 import {selectApp} from './app/select-app.js'
+import {getAppInfo} from './local-storage.js'
 import {AppInterface} from '../models/app/app.js'
 import {selectOrganizationPrompt} from '../prompts/dev.js'
-import {testApp} from '../models/app/app.test-data.js'
-import {path, session, output, store} from '@shopify/cli-kit'
-import {describe, it, expect, vi, beforeEach} from 'vitest'
+import {testApp, testUIExtension} from '../models/app/app.test-data.js'
+import {AppErrors} from '../models/app/loader.js'
+import {describe, expect, vi, test} from 'vitest'
 import {checkForNewVersion} from '@shopify/cli-kit/node/node-package-manager'
+import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
+import {joinPath} from '@shopify/cli-kit/node/path'
+import {stringifyMessage, unstyled} from '@shopify/cli-kit/node/output'
 
-beforeEach(async () => {
-  vi.mock('./dev/fetch.js')
-  vi.mock('./app/select-app.js')
-  vi.mock('../prompts/dev.js')
-  vi.mock('@shopify/cli-kit', async () => {
-    const cliKit: any = await vi.importActual('@shopify/cli-kit')
-    return {
-      ...cliKit,
-      session: {
-        ensureAuthenticatedPartners: vi.fn(),
-      },
-      store: {
-        getAppInfo: vi.fn(),
-        setAppInfo: vi.fn(),
-        clearAppInfo: vi.fn(),
-      },
-    }
-  })
-  vi.mock('@shopify/cli-kit/node/node-package-manager')
-})
+vi.mock('./local-storage.js')
+vi.mock('./dev/fetch.js')
+vi.mock('./app/select-app.js')
+vi.mock('../prompts/dev.js')
+vi.mock('@shopify/cli-kit/node/session')
+vi.mock('@shopify/cli-kit/node/node-package-manager')
 
 describe('info', () => {
-  it('returns update shopify cli reminder when last version is greater than current version', async () => {
+  test('returns update shopify cli reminder when last version is greater than current version', async () => {
     // Given
     const latestVersion = '2.2.3'
     const app = mockApp()
     vi.mocked(checkForNewVersion).mockResolvedValue(latestVersion)
 
     // When
-    const result = output.stringifyMessage(await info(app, {format: 'text', webEnv: false}))
+    const result = stringifyMessage(await info(app, {format: 'text', webEnv: false}))
     // Then
-    expect(output.unstyled(result)).toMatch(
-      'Shopify CLI       2.2.2 💡 Version 2.2.3 available! Run yarn shopify upgrade',
-    )
+    expect(unstyled(result)).toMatch('Shopify CLI       2.2.2 💡 Version 2.2.3 available! Run yarn shopify upgrade')
   })
 
-  it('returns the current configs for dev when present', async () => {
+  test('returns the current configs for dev when present', async () => {
     // Given
     const cachedAppInfo = {
       directory: '/path',
@@ -53,65 +41,62 @@ describe('info', () => {
       storeFqdn: 'my-app.example.com',
       updateURLs: true,
     }
-    vi.mocked(store.getAppInfo).mockResolvedValue(cachedAppInfo)
+    vi.mocked(getAppInfo).mockReturnValue(cachedAppInfo)
     const app = mockApp()
 
     // When
-    const result = output.stringifyMessage(await info(app, {format: 'text', webEnv: false}))
+    const result = stringifyMessage(await info(app, {format: 'text', webEnv: false}))
 
     // Then
-    expect(output.unstyled(result)).toMatch(/App\s*My App/)
-    expect(output.unstyled(result)).toMatch(/Dev store\s*my-app.example.com/)
-    expect(output.unstyled(result)).toMatch(/API key\s*123/)
-    expect(output.unstyled(result)).toMatch(/Update URLs\s*Always/)
+    expect(unstyled(result)).toMatch(/App\s*My App/)
+    expect(unstyled(result)).toMatch(/Dev store\s*my-app.example.com/)
+    expect(unstyled(result)).toMatch(/API key\s*123/)
+    expect(unstyled(result)).toMatch(/Update URLs\s*Always/)
   })
 
-  it('returns empty configs for dev when not present', async () => {
+  test('returns empty configs for dev when not present', async () => {
     // Given
     const app = mockApp()
 
     // When
-    const result = output.stringifyMessage(await info(app, {format: 'text', webEnv: false}))
+    const result = stringifyMessage(await info(app, {format: 'text', webEnv: false}))
 
     // Then
-    expect(output.unstyled(result)).toMatch(/App\s*Not yet configured/)
-    expect(output.unstyled(result)).toMatch(/Dev store\s*Not yet configured/)
-    expect(output.unstyled(result)).toMatch(/API key\s*Not yet configured/)
-    expect(output.unstyled(result)).toMatch(/Update URLs\s*Not yet configured/)
+    expect(unstyled(result)).toMatch(/App\s*Not yet configured/)
+    expect(unstyled(result)).toMatch(/Dev store\s*Not yet configured/)
+    expect(unstyled(result)).toMatch(/API key\s*Not yet configured/)
+    expect(unstyled(result)).toMatch(/Update URLs\s*Not yet configured/)
   })
 
-  it('returns update shopify cli reminder when last version lower or equals to current version', async () => {
+  test('returns update shopify cli reminder when last version lower or equals to current version', async () => {
     // Given
     const app = mockApp()
     vi.mocked(checkForNewVersion).mockResolvedValue(undefined)
 
     // When
-    const result = output.stringifyMessage(await info(app, {format: 'text', webEnv: false}))
+    const result = stringifyMessage(await info(app, {format: 'text', webEnv: false}))
     // Then
-    expect(output.unstyled(result)).toMatch('Shopify CLI       2.2.2')
-    expect(output.unstyled(result)).not.toMatch('CLI reminder')
+    expect(unstyled(result)).toMatch('Shopify CLI       2.2.2')
+    expect(unstyled(result)).not.toMatch('CLI reminder')
   })
 
-  it('returns the web environment as a text when webEnv is true', async () => {
+  test('returns the web environment as a text when webEnv is true', async () => {
     // Given
     const app = mockApp()
-    const token = 'token'
     const organization = {
       id: '123',
-      appsNext: false,
+      betas: {},
       businessName: 'test',
       website: '',
       apps: {nodes: []},
     }
-    const apiKey = 'api-key'
-    const apiSecret = 'api-secret'
     const organizationApp = {
       id: '123',
       title: 'Test app',
       appType: 'custom',
-      apiSecretKeys: [{secret: apiSecret}],
+      apiSecretKeys: [{secret: 'api-secret'}],
       organizationId: '1',
-      apiKey,
+      apiKey: 'api-key',
       grantedScopes: [],
     }
     vi.mocked(fetchOrganizations).mockResolvedValue([organization])
@@ -119,16 +104,19 @@ describe('info', () => {
     vi.mocked(fetchOrgAndApps).mockResolvedValue({
       organization,
       stores: [],
-      apps: [organizationApp],
+      apps: {
+        nodes: [organizationApp],
+        pageInfo: {hasNextPage: false},
+      },
     })
     vi.mocked(selectApp).mockResolvedValue(organizationApp)
-    vi.mocked(session.ensureAuthenticatedPartners).mockResolvedValue(token)
+    vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')
 
     // When
     const result = await info(app, {format: 'text', webEnv: true})
 
     // Then
-    expect(output.unstyled(output.stringifyMessage(result))).toMatchInlineSnapshot(`
+    expect(unstyled(stringifyMessage(result))).toMatchInlineSnapshot(`
     "
         SHOPIFY_API_KEY=api-key
         SHOPIFY_API_SECRET=api-secret
@@ -137,26 +125,23 @@ describe('info', () => {
     `)
   })
 
-  it('returns the web environment as a json when webEnv is true', async () => {
+  test('returns the web environment as a json when webEnv is true', async () => {
     // Given
     const app = mockApp()
-    const token = 'token'
     const organization = {
       id: '123',
-      appsNext: false,
+      betas: {},
       businessName: 'test',
       website: '',
       apps: {nodes: []},
     }
-    const apiKey = 'api-key'
-    const apiSecret = 'api-secret'
     const organizationApp = {
       id: '123',
       title: 'Test app',
       appType: 'custom',
-      apiSecretKeys: [{secret: apiSecret}],
+      apiSecretKeys: [{secret: 'api-secret'}],
       organizationId: '1',
-      apiKey,
+      apiKey: 'api-key',
       grantedScopes: [],
     }
     vi.mocked(fetchOrganizations).mockResolvedValue([organization])
@@ -164,16 +149,19 @@ describe('info', () => {
     vi.mocked(fetchOrgAndApps).mockResolvedValue({
       organization,
       stores: [],
-      apps: [organizationApp],
+      apps: {
+        nodes: [organizationApp],
+        pageInfo: {hasNextPage: false},
+      },
     })
     vi.mocked(selectApp).mockResolvedValue(organizationApp)
-    vi.mocked(session.ensureAuthenticatedPartners).mockResolvedValue(token)
+    vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')
 
     // When
     const result = await info(app, {format: 'json', webEnv: true})
 
     // Then
-    expect(output.unstyled(output.stringifyMessage(result))).toMatchInlineSnapshot(`
+    expect(unstyled(stringifyMessage(result))).toMatchInlineSnapshot(`
       "{
         \\"SHOPIFY_API_KEY\\": \\"api-key\\",
         \\"SHOPIFY_API_SECRET\\": \\"api-secret\\",
@@ -181,19 +169,87 @@ describe('info', () => {
       }"
     `)
   })
+
+  test('returns errors alongside extensions when extensions have errors', async () => {
+    // Given
+    const uiExtension1 = await testUIExtension({
+      configuration: {
+        name: 'Extension 1',
+        type: 'ui_extension',
+        metafields: [],
+      },
+      configurationPath: 'extension/path/1',
+    })
+    const uiExtension2 = await testUIExtension({
+      configuration: {
+        name: 'Extension 2',
+        type: 'checkout_ui_extension',
+        metafields: [],
+      },
+      configurationPath: 'extension/path/2',
+    })
+
+    const errors = new AppErrors()
+    errors.addError(uiExtension1.configurationPath, 'Mock error with ui_extension')
+    errors.addError(uiExtension2.configurationPath, 'Mock error with checkout_ui_extension')
+
+    const app = mockApp(undefined, {
+      errors,
+      allExtensions: [uiExtension1, uiExtension2],
+    })
+    const organization = {
+      id: '123',
+      betas: {},
+      businessName: 'test',
+      website: '',
+      apps: {nodes: []},
+    }
+    const organizationApp = {
+      id: '123',
+      title: 'Test app',
+      appType: 'custom',
+      apiSecretKeys: [{secret: 'api-secret'}],
+      organizationId: '1',
+      apiKey: 'api-key',
+      grantedScopes: [],
+    }
+    vi.mocked(fetchOrganizations).mockResolvedValue([organization])
+    vi.mocked(selectOrganizationPrompt).mockResolvedValue(organization)
+    vi.mocked(fetchOrgAndApps).mockResolvedValue({
+      organization,
+      stores: [],
+      apps: {
+        nodes: [organizationApp],
+        pageInfo: {hasNextPage: false},
+      },
+    })
+    vi.mocked(selectApp).mockResolvedValue(organizationApp)
+    vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')
+
+    // When
+    const result = await info(app, {format: 'text', webEnv: false})
+
+    // Then
+    expect(result).toContain('Extensions with errors')
+    expect(result).toContain('📂 ui_extension')
+    expect(result).toContain('! Mock error with ui_extension')
+    expect(result).toContain('! Mock error with checkout_ui_extension')
+  })
 })
 
-function mockApp(currentVersion = '2.2.2'): AppInterface {
+function mockApp(currentVersion = '2.2.2', app?: Partial<AppInterface>): AppInterface {
   const nodeDependencies: {[key: string]: string} = {}
   nodeDependencies['@shopify/cli'] = currentVersion
+
   return testApp({
     name: 'myapp',
     directory: '/',
-    configurationPath: path.join('/', 'shopify.app.toml'),
+    configurationPath: joinPath('/', 'shopify.app.toml'),
     configuration: {
       scopes: 'my-scope',
       extensionDirectories: ['extensions/*'],
     },
     nodeDependencies,
+    ...(app ? app : {}),
   })
 }

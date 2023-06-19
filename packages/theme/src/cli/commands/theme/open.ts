@@ -1,19 +1,20 @@
-import {getThemeStore} from '../../utilities/theme-store.js'
+import {ensureThemeStore} from '../../utilities/theme-store.js'
 import ThemeCommand from '../../utilities/theme-command.js'
 import {themeFlags} from '../../flags.js'
+import {open} from '../../services/open.js'
 import {Flags} from '@oclif/core'
-import {cli, session} from '@shopify/cli-kit'
-import {execCLI2} from '@shopify/cli-kit/node/ruby'
+import {globalFlags} from '@shopify/cli-kit/node/cli'
+import {ensureAuthenticatedThemes} from '@shopify/cli-kit/node/session'
 
 export default class Open extends ThemeCommand {
   static description = 'Opens the preview of your remote theme.'
 
   static flags = {
-    ...cli.globalFlags,
+    ...globalFlags,
     password: themeFlags.password,
     development: Flags.boolean({
       char: 'd',
-      description: 'Delete your development theme.',
+      description: 'Open your development theme.',
       env: 'SHOPIFY_FLAG_DEVELOPMENT',
     }),
     editor: Flags.boolean({
@@ -23,7 +24,7 @@ export default class Open extends ThemeCommand {
     }),
     live: Flags.boolean({
       char: 'l',
-      description: 'Pull theme files from your remote live theme.',
+      description: 'Open your live (published) theme.',
       env: 'SHOPIFY_FLAG_LIVE',
     }),
     theme: Flags.string({
@@ -32,15 +33,14 @@ export default class Open extends ThemeCommand {
       env: 'SHOPIFY_FLAG_THEME_ID',
     }),
     store: themeFlags.store,
+    environment: themeFlags.environment,
   }
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Open)
-    const flagsToPass = this.passThroughFlags(flags, {exclude: ['store', 'verbose', 'password']})
-    const command = ['theme', 'open', ...flagsToPass]
+    const store = ensureThemeStore(flags)
+    const adminSession = await ensureAuthenticatedThemes(store, flags.password)
 
-    const store = await getThemeStore(flags)
-    const adminSession = await session.ensureAuthenticatedThemes(store, flags.password)
-    await execCLI2(command, {adminSession})
+    await open(adminSession, flags)
   }
 }

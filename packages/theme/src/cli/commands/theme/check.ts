@@ -1,14 +1,14 @@
 import {themeFlags} from '../../flags.js'
 import ThemeCommand from '../../utilities/theme-command.js'
 import {execCLI2} from '@shopify/cli-kit/node/ruby'
-import {cli} from '@shopify/cli-kit'
 import {Flags} from '@oclif/core'
+import {globalFlags} from '@shopify/cli-kit/node/cli'
 
 export default class Check extends ThemeCommand {
-  static description = 'Validate the theme'
+  static description = 'Validate the theme.'
 
   static flags = {
-    ...cli.globalFlags,
+    ...globalFlags,
     path: themeFlags.path,
     'auto-correct': Flags.boolean({
       char: 'a',
@@ -43,6 +43,11 @@ Excludes checks matching any category when specified more than once`,
       env: 'SHOPIFY_FLAG_FAIL_LEVEL',
       options: ['error', 'suggestion', 'style'],
     }),
+    'update-docs': Flags.boolean({
+      required: false,
+      description: 'Update Theme Check docs (objects, filters, and tags)',
+      env: 'SHOPIFY_FLAG_UPDATE_DOCS',
+    }),
     init: Flags.boolean({
       required: false,
       description: 'Generate a .theme-check.yml file',
@@ -72,11 +77,26 @@ Excludes checks matching any category when specified more than once`,
       description: 'Print Theme Check version',
       env: 'SHOPIFY_FLAG_VERSION',
     }),
+    environment: themeFlags.environment,
   }
+
+  static cli2Flags = [
+    'auto-correct',
+    'category',
+    'config',
+    'exclude-category',
+    'update-docs',
+    'fail-level',
+    'init',
+    'list',
+    'output',
+    'print',
+    'version',
+  ]
 
   async run(): Promise<void> {
     const {flags} = await this.parse(Check)
-    await execCLI2(['theme', 'check', flags.path, ...this.passThroughFlags(flags, {exclude: ['path', 'verbose']})], {
+    await execCLI2(['theme', 'check', flags.path, ...this.passThroughFlags(flags, {allowedFlags: Check.cli2Flags})], {
       directory: flags.path,
     })
   }

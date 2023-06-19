@@ -1,68 +1,67 @@
 import {errorHandler, cleanStackFrameFilePath, addBugsnagMetadata, sendErrorToBugsnag} from './error-handler.js'
-import * as environment from '../../environment.js'
-import * as error from '../../error.js'
-import * as outputMocker from '../../testing/output.js'
-import {hashString} from '../../string.js'
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import {ciPlatform, cloudEnvironment, isUnitTest, macAddress} from './context/local.js'
+import {mockAndCaptureOutput} from './testing/output.js'
+import * as error from './error.js'
+import {hashString} from '../../public/node/crypto.js'
+import {beforeEach, describe, expect, test, vi} from 'vitest'
 
 const onNotify = vi.fn()
-beforeEach(() => {
-  vi.mock('node:process')
-  vi.mock('@bugsnag/js', () => {
-    return {
-      default: {
-        notify: (reportedError: any, args: any, callback: any) => {
-          onNotify(reportedError)
-          callback(null)
-        },
-        isStarted: () => true,
-      },
-    }
-  })
-  vi.mock('./cli.js')
-  vi.mock('../../environment.js')
-  vi.mock('../../string.js')
-  vi.mocked(environment.local.ciPlatform).mockReturnValue({isCI: true, name: 'vitest'})
-  vi.mocked(environment.local.macAddress).mockResolvedValue('macAddress')
-  vi.mocked(environment.local.cloudEnvironment).mockReturnValue({platform: 'spin', editor: false})
-  vi.mocked(hashString).mockReturnValue('hashed-macaddress')
-})
 
-afterEach(() => {
-  vi.resetAllMocks()
+vi.mock('process')
+vi.mock('../../private/node/error-handler.js', () => {
+  return {
+    Bugsnag: {
+      notify: (reportedError: any, args: any, callback: any) => {
+        onNotify(reportedError)
+        callback(null)
+      },
+      isStarted: () => true,
+    },
+  }
+})
+vi.mock('./cli.js')
+vi.mock('./context/local.js')
+vi.mock('../../public/node/crypto.js')
+
+beforeEach(() => {
+  vi.mocked(ciPlatform).mockReturnValue({isCI: true, name: 'vitest', metadata: {}})
+  vi.mocked(macAddress).mockResolvedValue('macAddress')
+  vi.mocked(cloudEnvironment).mockReturnValue({platform: 'spin', editor: false})
+  vi.mocked(hashString).mockReturnValue('hashed-macaddress')
+  vi.mocked(isUnitTest).mockReturnValue(true)
 })
 
 describe('errorHandler', () => {
-  it('finishes the execution without exiting the proccess when cancel execution exception is raised', async () => {
+  test('finishes the execution without exiting the proccess when cancel execution exception is raised', async () => {
     // Given
     vi.spyOn(process, 'exit').mockResolvedValue(null as never)
 
     // When
-    await errorHandler(new error.CancelExecution())
+    errorHandler(new error.CancelExecution())
 
     // Then
     expect(process.exit).toBeCalledTimes(0)
   })
 
-  it('finishes the execution without exiting the proccess and display a custom message when cancel execution exception is raised with a message', async () => {
+  test('finishes the execution without exiting the proccess and display a custom message when cancel execution exception is raised with a message', async () => {
     // Given
     vi.spyOn(process, 'exit').mockResolvedValue(null as never)
-    const outputMock = outputMocker.mockAndCaptureOutput()
+    const outputMock = mockAndCaptureOutput()
 
     // When
-    await errorHandler(new error.CancelExecution('Custom message'))
+    errorHandler(new error.CancelExecution('Custom message'))
 
     // Then
     expect(outputMock.info()).toMatch('✨  Custom message')
     expect(process.exit).toBeCalledTimes(0)
   })
 
-  it('finishes the execution gracefully and exits the proccess when abort silent exception', async () => {
+  test('finishes the execution gracefully and exits the proccess when abort silent exception', async () => {
     // Given
     vi.spyOn(process, 'exit').mockResolvedValue(null as never)
 
     // When
-    await errorHandler(new error.AbortSilent())
+    errorHandler(new error.AbortSilentError())
 
     // Then
     expect(process.exit).toBeCalledTimes(1)
@@ -71,7 +70,7 @@ describe('errorHandler', () => {
 })
 
 describe('bugsnag stack cleaning', () => {
-  it.each([
+  test.each([
     ['dependency in relative path', 'cool-project/node_modules/deppy/foo/bar.ts', 'deppy/foo/bar.ts'],
     ['dependency in absolute path', '/Users/ju/Desktop/cool/node_modules/deppy/foo/bar.ts', 'deppy/foo/bar.ts'],
     ['plugin in project', 'node_modules/@plugin/name/foo/bar.ts', '@plugin/name/foo/bar.ts'],
@@ -108,7 +107,7 @@ describe('bugsnag stack cleaning', () => {
 })
 
 describe('bugsnag metadata', () => {
-  it('includes public data', async () => {
+  test('includes public data', async () => {
     const event = {
       addMetadata: vi.fn(),
     }
@@ -122,7 +121,7 @@ describe('bugsnag metadata', () => {
 })
 
 describe('send to Bugsnag', () => {
-  it('processes Error instances', async () => {
+  test('processes Error instances', async () => {
     const toThrow = new Error('In test')
     const res = await sendErrorToBugsnag(toThrow)
     expect(res.reported).toEqual(true)
@@ -134,7 +133,7 @@ describe('send to Bugsnag', () => {
     expect(onNotify).toHaveBeenCalledWith(res.error)
   })
 
-  it('processes string instances', async () => {
+  test('processes string instances', async () => {
     const res = await sendErrorToBugsnag('In test' as any)
     expect(res.reported).toEqual(true)
     const {error} = res as any
@@ -142,14 +141,14 @@ describe('send to Bugsnag', () => {
     expect(onNotify).toHaveBeenCalledWith(res.error)
   })
 
-  it('ignores fatals', async () => {
-    const res = await sendErrorToBugsnag(new error.Abort('In test'))
+  test('ignores fatals', async () => {
+    const res = await sendErrorToBugsnag(new error.AbortError('In test'))
     expect(res.reported).toEqual(false)
     expect(onNotify).not.toHaveBeenCalled()
   })
 
-  it.each([null, undefined, {}, {message: 'nope'}])('deals with strange things to throw %s', async (throwable) => {
-    const res = await sendErrorToBugsnag(throwable as any)
+  test.each([null, undefined, {}, {message: 'nope'}])('deals with strange things to throw %s', async (throwable) => {
+    const res = await sendErrorToBugsnag(throwable)
     expect(res.reported).toEqual(false)
     expect(onNotify).not.toHaveBeenCalled()
   })

@@ -1,7 +1,7 @@
 import {executables} from '../lib/constants'
 import {exec} from '../lib/system'
 import {When, Then} from '@cucumber/cucumber'
-import path from 'pathe'
+import * as path from 'pathe'
 import fs from 'fs-extra'
 import {strict as assert} from 'assert'
 
@@ -9,7 +9,7 @@ interface ExtensionConfiguration {
   configuration: {
     name: string
   }
-  outputBundlePath: string
+  outputPath: string
 }
 
 When(
@@ -30,9 +30,9 @@ When(
         '--template',
         'https://github.com/Shopify/shopify-app-template-node#richard/frontend-via-submodules-toml-updates',
       ],
-      {env: {...process.env, ...this.temporaryEnv}},
+      {env: {...process.env, ...this.temporaryEnv, FORCE_COLOR: '0'}},
     )
-    const hyphenatedAppName = stdout.match(/Initializing your app ([\w-]+)/)[1]
+    const hyphenatedAppName = stdout.match(/([\w-]+) is ready for you to build!/)[1]
     this.appDirectory = path.join(this.temporaryDirectory, hyphenatedAppName)
   },
 )
@@ -57,8 +57,8 @@ Then(/I build the app/, {timeout: 2 * 60 * 1000 * 1000}, async function () {
 
 Then(/The UI extensions are built/, {timeout: 2 * 60 * 1000 * 1000}, async function () {
   const appInfo = await this.appInfo()
-  const extensionsMissingBuildFile = appInfo.extensions.ui.filter((extension: ExtensionConfiguration) => {
-    const buildFilePath = extension.outputBundlePath
+  const extensionsMissingBuildFile = appInfo.allExtensions.filter((extension: ExtensionConfiguration) => {
+    const buildFilePath = extension.outputPath
 
     return !fs.pathExistsSync(buildFilePath)
   })

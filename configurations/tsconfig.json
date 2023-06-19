@@ -4,7 +4,7 @@
       "lib": ["ES2020"],
       "module": "ES2020",
       "target": "ES2020",
-      "moduleResolution": "node",
+      "moduleResolution": "NodeNext",
       "esModuleInterop": true,
       "strict": true,
       "strictNullChecks": true,
@@ -19,8 +19,6 @@
       "noUncheckedIndexedAccess": true,
       "jsx": "react",
       "paths": {
-        "@shopify/cli-hydrogen/commands/hydrogen/init": ["../packages/cli-hydrogen/src/cli/commands/hydrogen/init"],
-        "@shopify/cli-kit": ["../packages/cli-kit/src/index"],
         "@shopify/cli-kit/*": ["../packages/cli-kit/src/public/*"],
         "@shopify/cli-kit/typing/*": ["../packages/cli-kit/src/typing/*"],
       },

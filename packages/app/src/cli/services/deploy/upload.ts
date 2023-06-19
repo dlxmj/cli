@@ -1,9 +1,43 @@
 import {themeExtensionConfig as generateThemeExtensionConfig} from './theme-extension-config.js'
 import {Identifiers, IdentifiersExtensions} from '../../models/app/identifiers.js'
-import {FunctionExtension, ThemeExtension} from '../../models/app/extensions.js'
-import {api, error, session, http, id, output, file} from '@shopify/cli-kit'
-
-import fs from 'fs'
+import {
+  UploadUrlGenerateMutation,
+  UploadUrlGenerateMutationSchema,
+} from '../../api/graphql/functions/upload_url_generate.js'
+import {
+  ExtensionUpdateDraftInput,
+  ExtensionUpdateDraftMutation,
+  ExtensionUpdateSchema,
+} from '../../api/graphql/update_draft.js'
+import {
+  CreateDeployment,
+  CreateDeploymentSchema,
+  CreateDeploymentVariables,
+  ExtensionSettings,
+} from '../../api/graphql/create_deployment.js'
+import {
+  GenerateSignedUploadUrl,
+  GenerateSignedUploadUrlSchema,
+  GenerateSignedUploadUrlVariables,
+} from '../../api/graphql/generate_signed_upload_url.js'
+import {
+  AppFunctionSetMutation,
+  AppFunctionSetMutationSchema,
+  AppFunctionSetVariables,
+} from '../../api/graphql/functions/app_function_set.js'
+import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
+import {FunctionConfigType} from '../../models/extensions/specifications/function.js'
+import {functionProxyRequest, partnersRequest} from '@shopify/cli-kit/node/api/partners'
+import {randomUUID} from '@shopify/cli-kit/node/crypto'
+import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
+import {fileExists, readFile, readFileSync} from '@shopify/cli-kit/node/fs'
+import {fetch, formData} from '@shopify/cli-kit/node/http'
+import {AbortError, BugError} from '@shopify/cli-kit/node/error'
+import {formatPackageManagerCommand, outputContent, outputToken} from '@shopify/cli-kit/node/output'
+import {AlertCustomSection, ListToken, TokenItem} from '@shopify/cli-kit/node/ui'
+import {partition} from '@shopify/cli-kit/common/collection'
+import {getPackageManager} from '@shopify/cli-kit/node/node-package-manager'
+import {cwd} from '@shopify/cli-kit/node/path'
 
 interface DeployThemeExtensionOptions {
   /** The application API key */
@@ -21,7 +55,7 @@ interface DeployThemeExtensionOptions {
  * @param options - The upload options
  */
 export async function uploadThemeExtensions(
-  themeExtensions: ThemeExtension[],
+  themeExtensions: ExtensionInstance[],
   options: DeployThemeExtensionOptions,
 ): Promise<void> {
   const {apiKey, identifiers, token} = options
@@ -29,34 +63,37 @@ export async function uploadThemeExtensions(
     themeExtensions.map(async (themeExtension) => {
       const themeExtensionConfig = await generateThemeExtensionConfig(themeExtension)
       const themeId = identifiers.extensionIds[themeExtension.localIdentifier]!
-      const themeExtensionInput: api.graphql.ExtensionUpdateDraftInput = {
+      const themeExtensionInput: ExtensionUpdateDraftInput = {
         apiKey,
         config: JSON.stringify(themeExtensionConfig),
         context: undefined,
         registrationId: themeId,
       }
-      const mutation = api.graphql.ExtensionUpdateDraftMutation
-      const result: api.graphql.ExtensionUpdateSchema = await api.partners.request(mutation, token, themeExtensionInput)
+      const mutation = ExtensionUpdateDraftMutation
+      const result: ExtensionUpdateSchema = await partnersRequest(mutation, token, themeExtensionInput)
       if (result.extensionUpdateDraft?.userErrors?.length > 0) {
         const errors = result.extensionUpdateDraft.userErrors.map((error) => error.message).join(', ')
-        throw new error.Abort(errors)
+        throw new AbortError(errors)
       }
     }),
   )
 }
 
-interface UploadUIExtensionsBundleOptions {
+interface UploadExtensionsBundleOptions {
   /** The application API key */
   apiKey: string
 
   /** The path to the bundle file to be uploaded */
-  bundlePath: string
+  bundlePath?: string
 
   /** The token to send authenticated requests to the partners' API  */
   token: string
 
   /** Extensions extra data */
-  extensions: api.graphql.ExtensionSettings[]
+  extensions: ExtensionSettings[]
+
+  /** The extensions' numeric identifiers (expressed as a string). */
+  extensionIds: IdentifiersExtensions
 }
 
 export interface UploadExtensionValidationError {
@@ -67,38 +104,59 @@ export interface UploadExtensionValidationError {
   }[]
 }
 
+type ErrorSectionBody = TokenItem
+interface ErrorCustomSection extends AlertCustomSection {
+  body: ErrorSectionBody
+}
+
 /**
  * Uploads a bundle.
  * @param options - The upload options
  */
-export async function uploadUIExtensionsBundle(
-  options: UploadUIExtensionsBundleOptions,
-): Promise<UploadExtensionValidationError[]> {
-  const deploymentUUID = id.generateRandomUUID()
-  const signedURL = await getUIExtensionUploadURL(options.apiKey, deploymentUUID)
+export async function uploadExtensionsBundle(
+  options: UploadExtensionsBundleOptions,
+): Promise<{validationErrors: UploadExtensionValidationError[]; deploymentId: number}> {
+  const deploymentUUID = randomUUID()
+  let signedURL
 
-  const formData = http.formData()
-  const buffer = fs.readFileSync(options.bundlePath)
-  formData.append('my_upload', buffer)
-  await http.fetch(signedURL, {
-    method: 'put',
-    body: buffer,
-    headers: formData.getHeaders(),
-  })
+  if (options.bundlePath) {
+    signedURL = await getExtensionUploadURL(options.apiKey, deploymentUUID)
 
-  const variables: api.graphql.CreateDeploymentVariables = {
-    apiKey: options.apiKey,
-    uuid: deploymentUUID,
-    bundleUrl: signedURL,
-    extensions: options.extensions,
+    const form = formData()
+    const buffer = readFileSync(options.bundlePath)
+    form.append('my_upload', buffer)
+    await fetch(signedURL, {
+      method: 'put',
+      body: buffer,
+      headers: form.getHeaders(),
+    })
   }
 
-  const mutation = api.graphql.CreateDeployment
-  const result: api.graphql.CreateDeploymentSchema = await api.partners.request(mutation, options.token, variables)
+  const variables: CreateDeploymentVariables = {
+    apiKey: options.apiKey,
+    uuid: deploymentUUID,
+  }
+
+  if (signedURL) {
+    variables.bundleUrl = signedURL
+  }
+
+  if (options.extensions.length > 0) {
+    variables.extensions = options.extensions
+  }
+
+  const mutation = CreateDeployment
+  const result: CreateDeploymentSchema = await handlePartnersErrors(() =>
+    partnersRequest(mutation, options.token, variables),
+  )
 
   if (result.deploymentCreate?.userErrors?.length > 0) {
-    const errors = result.deploymentCreate.userErrors.map((error) => error.message).join(', ')
-    throw new error.Abort(errors)
+    const customSections: AlertCustomSection[] = deploymentErrorsToCustomSections(
+      result.deploymentCreate.userErrors,
+      options.extensionIds,
+    )
+
+    throw new AbortError('There has been an error creating your deployment.', null, [], customSections)
   }
 
   const validationErrors = result.deploymentCreate.deployment.deployedVersions
@@ -107,7 +165,116 @@ export async function uploadUIExtensionsBundle(
       return {uuid: ver.extensionVersion.registrationUuid, errors: ver.extensionVersion.validationErrors}
     })
 
-  return validationErrors
+  return {validationErrors, deploymentId: result.deploymentCreate.deployment.id}
+}
+
+const VALIDATION_ERRORS_TITLE = '\nValidation errors'
+const GENERIC_ERRORS_TITLE = '\n'
+
+export function deploymentErrorsToCustomSections(
+  errors: CreateDeploymentSchema['deploymentCreate']['userErrors'],
+  extensionIds: IdentifiersExtensions,
+): ErrorCustomSection[] {
+  const isCliError = (error: (typeof errors)[0], extensionIds: IdentifiersExtensions) => {
+    const errorExtensionId =
+      error.details?.find((detail) => typeof detail.extension_id !== 'undefined')?.extension_id.toString() ?? ''
+
+    return Object.values(extensionIds).includes(errorExtensionId)
+  }
+
+  const [cliErrors, partnersErrors] = partition(errors, (error) => isCliError(error, extensionIds))
+
+  const customSections = [...cliErrorsSections(cliErrors), ...partnersErrorsSections(partnersErrors)]
+  return customSections
+}
+
+function cliErrorsSections(errors: CreateDeploymentSchema['deploymentCreate']['userErrors']) {
+  return errors.reduce((sections, error) => {
+    const field = error.field.join('.')
+    const errorMessage = field === 'base' ? error.message : `${field}: ${error.message}`
+
+    const extensionIdentifier = error.details.find(
+      (detail) => typeof detail.extension_title !== 'undefined',
+    )?.extension_title
+
+    const existingSection = sections.find((section) => section.title === extensionIdentifier)
+
+    if (existingSection) {
+      const sectionBody = existingSection.body as ListToken[]
+      const errorsList =
+        error.category === 'invalid'
+          ? sectionBody.find((listToken) => listToken.list.title === VALIDATION_ERRORS_TITLE)
+          : sectionBody.find((listToken) => listToken.list.title === GENERIC_ERRORS_TITLE)
+
+      if (errorsList) {
+        errorsList.list.items.push(errorMessage)
+      } else {
+        sectionBody.push({
+          list: {
+            title: error.category === 'invalid' ? VALIDATION_ERRORS_TITLE : GENERIC_ERRORS_TITLE,
+            items: [errorMessage],
+          },
+        })
+      }
+    } else {
+      sections.push({
+        title: extensionIdentifier,
+        body: [
+          {
+            list: {
+              title: error.category === 'invalid' ? VALIDATION_ERRORS_TITLE : GENERIC_ERRORS_TITLE,
+              items: [errorMessage],
+            },
+          },
+        ],
+      })
+    }
+
+    sections.forEach((section) => {
+      // eslint-disable-next-line id-length
+      ;(section.body as ListToken[]).sort((a, b) => {
+        if (a.list.title === VALIDATION_ERRORS_TITLE) {
+          return 1
+        }
+
+        if (b.list.title === VALIDATION_ERRORS_TITLE) {
+          return -1
+        }
+
+        return 0
+      })
+    })
+
+    return sections
+  }, [] as ErrorCustomSection[])
+}
+
+function partnersErrorsSections(errors: CreateDeploymentSchema['deploymentCreate']['userErrors']) {
+  return errors
+    .reduce((sections, error) => {
+      const extensionIdentifier = error.details.find(
+        (detail) => typeof detail.extension_title !== 'undefined',
+      )?.extension_title
+
+      const existingSection = sections.find((section) => section.title === extensionIdentifier)
+
+      if (existingSection) {
+        existingSection.errorCount += 1
+      } else {
+        sections.push({
+          title: extensionIdentifier,
+          errorCount: 1,
+        })
+      }
+
+      return sections
+    }, [] as {title: string | undefined; errorCount: number}[])
+    .map((section) => ({
+      title: section.title,
+      body: `\n${section.errorCount} error${
+        section.errorCount > 1 ? 's' : ''
+      } found in your extension. Fix these issues in the Partner Dashboard and try deploying again.`,
+    })) as ErrorCustomSection[]
 }
 
 /**
@@ -115,19 +282,22 @@ export async function uploadUIExtensionsBundle(
  * @param apiKey - The application API key
  * @param deploymentUUID - The unique identifier of the deployment.
  */
-export async function getUIExtensionUploadURL(apiKey: string, deploymentUUID: string) {
-  const mutation = api.graphql.GenerateSignedUploadUrl
-  const token = await session.ensureAuthenticatedPartners()
-  const variables: api.graphql.GenerateSignedUploadUrlVariables = {
+export async function getExtensionUploadURL(apiKey: string, deploymentUUID: string) {
+  const mutation = GenerateSignedUploadUrl
+  const token = await ensureAuthenticatedPartners()
+  const variables: GenerateSignedUploadUrlVariables = {
     apiKey,
     deploymentUuid: deploymentUUID,
     bundleFormat: 1,
   }
 
-  const result: api.graphql.GenerateSignedUploadUrlSchema = await api.partners.request(mutation, token, variables)
+  const result: GenerateSignedUploadUrlSchema = await handlePartnersErrors(() =>
+    partnersRequest(mutation, token, variables),
+  )
+
   if (result.deploymentGenerateSignedUploadUrl?.userErrors?.length > 0) {
     const errors = result.deploymentGenerateSignedUploadUrl.userErrors.map((error) => error.message).join(', ')
-    throw new error.Abort(errors)
+    throw new AbortError(errors)
   }
 
   return result.deploymentGenerateSignedUploadUrl.signedUploadUrl
@@ -153,7 +323,7 @@ interface UploadFunctionExtensionsOptions {
  * @returns A promise that resolves with the identifiers.
  */
 export async function uploadFunctionExtensions(
-  extensions: FunctionExtension[],
+  extensions: ExtensionInstance<FunctionConfigType>[],
   options: UploadFunctionExtensionsOptions,
 ): Promise<Identifiers> {
   let identifiers = options.identifiers
@@ -189,71 +359,75 @@ interface UploadFunctionExtensionOptions {
 }
 
 async function uploadFunctionExtension(
-  extension: FunctionExtension,
+  extension: ExtensionInstance<FunctionConfigType>,
   options: UploadFunctionExtensionOptions,
 ): Promise<string> {
-  const url = await uploadWasmBlob(extension, options.apiKey, options.token)
+  const {url} = await uploadWasmBlob(extension.localIdentifier, extension.outputPath, options.apiKey, options.token)
 
   let inputQuery: string | undefined
-  if (await file.exists(extension.inputQueryPath())) {
-    inputQuery = await file.read(extension.inputQueryPath())
+  if (await fileExists(extension.inputQueryPath)) {
+    inputQuery = await readFile(extension.inputQueryPath)
   }
 
-  const query = api.graphql.AppFunctionSetMutation
-  const variables: api.graphql.AppFunctionSetVariables = {
+  const query = AppFunctionSetMutation
+  const variables: AppFunctionSetVariables = {
     // NOTE: This is a shim to support CLI projects that currently use the UUID instead of the ULID
     ...(options.identifier?.includes('-') ? {legacyUuid: options.identifier} : {id: options.identifier}),
     title: extension.configuration.name,
-    description: extension.configuration.description,
+    description: extension.configuration.description ?? '',
     apiType: extension.configuration.type,
     apiVersion: extension.configuration.apiVersion,
     inputQuery,
+    inputQueryVariables: extension.configuration.input?.variables
+      ? {
+          singleJsonMetafield: extension.configuration.input.variables,
+        }
+      : undefined,
     appBridge: extension.configuration.ui?.paths
       ? {
           detailsPath: extension.configuration.ui.paths.details,
           createPath: extension.configuration.ui.paths.create,
         }
       : undefined,
+    enableCreationUi: extension.configuration.ui?.enable_create ?? true,
     moduleUploadUrl: url,
   }
 
-  const res: api.graphql.AppFunctionSetMutationSchema = await api.partners.functionProxyRequest(
-    options.apiKey,
-    query,
-    options.token,
-    variables,
-  )
+  const res: AppFunctionSetMutationSchema = await functionProxyRequest(options.apiKey, query, options.token, variables)
   const userErrors = res.data.functionSet.userErrors ?? []
   if (userErrors.length !== 0) {
-    const errorMessage = output.content`The deployment of functions failed with the following errors:
-${output.token.json(userErrors)}
+    const errorMessage = outputContent`The deployment of functions failed with the following errors:
+${outputToken.json(userErrors)}
     `
-    throw new error.Abort(errorMessage)
+    throw new AbortError(errorMessage)
   }
   return res.data.functionSet.function?.id as string
 }
 
-async function uploadWasmBlob(extension: FunctionExtension, apiKey: string, token: string): Promise<string> {
-  const {url, headers, maxSize} = await getFunctionExtensionUploadURL({apiKey, token})
+export async function uploadWasmBlob(
+  extensionIdentifier: string,
+  wasmPath: string,
+  apiKey: string,
+  token: string,
+): Promise<{url: string; moduleId: string}> {
+  const {url, moduleId, headers, maxSize} = await getFunctionExtensionUploadURL({apiKey, token})
   headers['Content-Type'] = 'application/wasm'
 
-  const functionContent = await file.read(extension.buildWasmPath(), {})
-  const res = await http.fetch(url, {body: functionContent, headers, method: 'PUT'})
+  const functionContent = await readFile(wasmPath, {})
+  const res = await fetch(url, {body: functionContent, headers, method: 'PUT'})
   const resBody = res.body?.read()?.toString() || ''
 
   if (res.status === 200) {
-    return url
+    return {url, moduleId}
   } else if (res.status === 400 && resBody.includes('EntityTooLarge')) {
-    const errorMessage = output.content`The size of the Wasm binary file for Function ${extension.localIdentifier} is too large. It must be less than ${maxSize}.`
-    throw new error.Abort(errorMessage)
+    const errorMessage = outputContent`The size of the Wasm binary file for Function ${extensionIdentifier} is too large. It must be less than ${maxSize}.`
+    throw new AbortError(errorMessage)
   } else if (res.status >= 400 && res.status < 500) {
-    const errorMessage = output.content`Something went wrong uploading the Function ${
-      extension.localIdentifier
-    }. The server responded with status ${res.status.toString()} and body: ${resBody}`
-    throw new error.Bug(errorMessage)
+    const errorMessage = outputContent`Something went wrong uploading the Function ${extensionIdentifier}. The server responded with status ${res.status.toString()} and body: ${resBody}`
+    throw new BugError(errorMessage)
   } else {
-    const errorMessage = output.content`Something went wrong uploading the Function ${extension.localIdentifier}. Try again.`
-    throw new error.Abort(errorMessage)
+    const errorMessage = outputContent`Something went wrong uploading the Function ${extensionIdentifier}. Try again.`
+    throw new AbortError(errorMessage)
   }
 }
 
@@ -264,6 +438,7 @@ interface GetFunctionExtensionUploadURLOptions {
 
 interface GetFunctionExtensionUploadURLOutput {
   url: string
+  moduleId: string
   maxSize: string
   headers: {[key: string]: string}
 }
@@ -271,11 +446,28 @@ interface GetFunctionExtensionUploadURLOutput {
 async function getFunctionExtensionUploadURL(
   options: GetFunctionExtensionUploadURLOptions,
 ): Promise<GetFunctionExtensionUploadURLOutput> {
-  const query = api.graphql.UploadUrlGenerateMutation
-  const res: api.graphql.UploadUrlGenerateMutationSchema = await api.partners.functionProxyRequest(
-    options.apiKey,
-    query,
-    options.token,
+  const res: UploadUrlGenerateMutationSchema = await handlePartnersErrors(() =>
+    functionProxyRequest(options.apiKey, UploadUrlGenerateMutation, options.token),
   )
   return res.data.uploadUrlGenerate
+}
+
+async function handlePartnersErrors<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    const result = await request()
+    return result
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (error: any) {
+    if (error.errors?.[0]?.extensions?.type === 'unsupported_client_version') {
+      const packageManager = await getPackageManager(cwd())
+
+      throw new AbortError(
+        {bold: '`deploy` is no longer supported in this CLI version.'},
+        ['Upgrade your CLI version to use the', {command: 'deploy'}, 'command.'],
+        [['Run', {command: formatPackageManagerCommand(packageManager, 'shopify upgrade')}]],
+      )
+    }
+
+    throw error
+  }
 }

@@ -55,13 +55,13 @@ body:
     validations:
       required: true
   - type: textarea
-    id: stack_trace
+    id: verbose_output
     attributes:
-      label: Stack trace
-      description: Paste in a stack trace if you've got one!
+      label: Verbose output
+      description: If you're using npm rerun the command with `-- --verbose` or if you're using yarn or pnpm rerun the command with `--verbose`
       render: shell
     validations:
-      required: false
+      required: true
   - type: textarea
     id: repro_steps
     attributes:

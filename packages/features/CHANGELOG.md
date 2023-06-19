@@ -1,5 +1,47 @@
 # @shopify/features
 
+## 0.8.0
+
+### Minor Changes
+
+- e13c78960: Hide plugins commands
+
+## 0.8.0-pre.0
+
+### Minor Changes
+
+- e13c78960: Hide plugins commands
+
+## 0.7.2
+
+### Patch Changes
+
+- 82a06e7e2: Add did-you-mean plugin
+
+## 0.7.1
+
+### Patch Changes
+
+- 9d9480341: Add developer experience preview for JavaScript functions
+
+## 0.7.0
+
+### Minor Changes
+
+- aaa9730d: New update-url command
+
+## 0.6.0
+
+### Minor Changes
+
+- 737ca469: Remove logs functionality
+
+## 0.5.0
+
+### Minor Changes
+
+- 8498d3e0: Add webhook trigger command
+
 ## 0.4.0
 
 ### Minor Changes

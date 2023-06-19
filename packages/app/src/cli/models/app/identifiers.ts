@@ -1,8 +1,9 @@
-import {Extension} from './extensions.js'
 import {dotEnvFileNames} from '../../constants.js'
-import {path, string} from '@shopify/cli-kit'
+import {ExtensionInstance} from '../extensions/extension-instance.js'
 import {writeDotEnv} from '@shopify/cli-kit/node/dot-env'
-import type {AppInterface} from './app'
+import {constantize} from '@shopify/cli-kit/common/string'
+import {joinPath} from '@shopify/cli-kit/node/path'
+import type {AppInterface} from './app.js'
 
 export interface IdentifiersExtensions {
   [localIdentifier: string]: string
@@ -43,7 +44,7 @@ export async function updateAppIdentifiers(
   let dotenvFile = app.dotenv
   if (!dotenvFile) {
     dotenvFile = {
-      path: path.join(app.directory, dotEnvFileNames.production),
+      path: joinPath(app.directory, dotEnvFileNames.production),
       variables: {},
     }
   }
@@ -52,7 +53,7 @@ export async function updateAppIdentifiers(
     updatedVariables[app.idEnvironmentVariableName] = identifiers.app
   }
   Object.keys(identifiers.extensions).forEach((identifier) => {
-    const envVariable = `SHOPIFY_${string.constantize(identifier)}_ID`
+    const envVariable = `SHOPIFY_${constantize(identifier)}_ID`
     if (!systemEnvironment[envVariable]) {
       updatedVariables[envVariable] = identifiers.extensions[identifier]!
     }
@@ -85,14 +86,12 @@ export function getAppIdentifiers(
     ...(systemEnvironment as {[variable: string]: string}),
   }
   const extensionsIdentifiers: {[key: string]: string} = {}
-  const processExtension = (extension: Extension) => {
+  const processExtension = (extension: ExtensionInstance) => {
     if (Object.keys(envVariables).includes(extension.idEnvironmentVariableName)) {
       extensionsIdentifiers[extension.localIdentifier] = envVariables[extension.idEnvironmentVariableName]!
     }
   }
-  app.extensions.ui.forEach(processExtension)
-  app.extensions.function.forEach(processExtension)
-  app.extensions.theme.forEach(processExtension)
+  app.allExtensions.forEach(processExtension)
 
   return {
     app: envVariables[app.idEnvironmentVariableName],

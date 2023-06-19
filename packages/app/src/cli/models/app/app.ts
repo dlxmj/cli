@@ -1,13 +1,15 @@
-import {Extension, FunctionExtension, ThemeExtension, UIExtension} from './extensions.js'
 import {AppErrors} from './loader.js'
-import {getUIExtensionRendererDependency, UIExtensionTypes} from '../../constants.js'
-import {path, schema, file} from '@shopify/cli-kit'
+import {ExtensionInstance} from '../extensions/extension-instance.js'
+import {zod} from '@shopify/cli-kit/node/schema'
 import {DotEnvFile} from '@shopify/cli-kit/node/dot-env'
 import {getDependencies, PackageManager, readAndParsePackageJson} from '@shopify/cli-kit/node/node-package-manager'
+import {fileRealPath, findPathUp} from '@shopify/cli-kit/node/fs'
+import {joinPath, dirname} from '@shopify/cli-kit/node/path'
 
-export const AppConfigurationSchema = schema.define.object({
-  scopes: schema.define.string().default(''),
-  extensionDirectories: schema.define.array(schema.define.string()).optional(),
+export const AppConfigurationSchema = zod.object({
+  scopes: zod.string().default(''),
+  extensionDirectories: zod.array(zod.string()).optional(),
+  webDirectories: zod.array(zod.string()).optional(),
 })
 
 export enum WebType {
@@ -15,19 +17,25 @@ export enum WebType {
   Backend = 'backend',
 }
 
-export const WebConfigurationSchema = schema.define.object({
-  type: schema.define.enum([WebType.Frontend, WebType.Backend]),
-  auth_callback_path: schema.define
-    .preprocess((arg) => (typeof arg === 'string' && !arg.startsWith('/') ? `/${arg}` : arg), schema.define.string())
+const ensurePathStartsWithSlash = (arg: unknown) => (typeof arg === 'string' && !arg.startsWith('/') ? `/${arg}` : arg)
+
+const WebConfigurationAuthCallbackPathSchema = zod.preprocess(ensurePathStartsWithSlash, zod.string())
+
+export const WebConfigurationSchema = zod.object({
+  type: zod.enum([WebType.Frontend, WebType.Backend]).default(WebType.Frontend),
+  authCallbackPath: zod
+    .union([WebConfigurationAuthCallbackPathSchema, WebConfigurationAuthCallbackPathSchema.array()])
     .optional(),
-  commands: schema.define.object({
-    build: schema.define.string().optional(),
-    dev: schema.define.string(),
+  webhooksPath: zod.preprocess(ensurePathStartsWithSlash, zod.string()).optional(),
+  port: zod.number().max(65536).min(0).optional(),
+  commands: zod.object({
+    build: zod.string().optional(),
+    dev: zod.string(),
   }),
 })
 
-export type AppConfiguration = schema.define.infer<typeof AppConfigurationSchema>
-export type WebConfiguration = schema.define.infer<typeof WebConfigurationSchema>
+export type AppConfiguration = zod.infer<typeof AppConfigurationSchema>
+export type WebConfiguration = zod.infer<typeof WebConfigurationSchema>
 export type WebConfigurationCommands = keyof WebConfiguration['commands']
 
 export interface Web {
@@ -47,16 +55,11 @@ export interface AppInterface {
   webs: Web[]
   usesWorkspaces: boolean
   dotenv?: DotEnvFile
-  extensions: {
-    ui: UIExtension[]
-    theme: ThemeExtension[]
-    function: FunctionExtension[]
-  }
+  allExtensions: ExtensionInstance[]
   errors?: AppErrors
   hasExtensions: () => boolean
-  hasUIExtensions: () => boolean
   updateDependencies: () => Promise<void>
-  extensionsForType: (spec: {identifier: string; externalIdentifier: string}) => Extension[]
+  extensionsForType: (spec: {identifier: string; externalIdentifier: string}) => ExtensionInstance[]
 }
 
 export class App implements AppInterface {
@@ -71,11 +74,7 @@ export class App implements AppInterface {
   usesWorkspaces: boolean
   dotenv?: DotEnvFile
   errors?: AppErrors
-  extensions: {
-    ui: UIExtension[]
-    theme: ThemeExtension[]
-    function: FunctionExtension[]
-  }
+  allExtensions: ExtensionInstance[]
 
   // eslint-disable-next-line max-params
   constructor(
@@ -87,9 +86,7 @@ export class App implements AppInterface {
     configurationPath: string,
     nodeDependencies: {[key: string]: string},
     webs: Web[],
-    ui: UIExtension[],
-    theme: ThemeExtension[],
-    functions: FunctionExtension[],
+    extensions: ExtensionInstance[],
     usesWorkspaces: boolean,
     dotenv?: DotEnvFile,
     errors?: AppErrors,
@@ -103,33 +100,22 @@ export class App implements AppInterface {
     this.nodeDependencies = nodeDependencies
     this.webs = webs
     this.dotenv = dotenv
-    this.extensions = {
-      ui,
-      theme,
-      function: functions,
-    }
+    this.allExtensions = extensions
     this.errors = errors
     this.usesWorkspaces = usesWorkspaces
   }
 
   async updateDependencies() {
-    const nodeDependencies = await getDependencies(path.join(this.directory, 'package.json'))
+    const nodeDependencies = await getDependencies(joinPath(this.directory, 'package.json'))
     this.nodeDependencies = nodeDependencies
   }
 
   hasExtensions(): boolean {
-    return (
-      this.extensions.ui.length !== 0 || this.extensions.function.length !== 0 || this.extensions.theme.length !== 0
-    )
+    return this.allExtensions.length > 0
   }
 
-  hasUIExtensions(): boolean {
-    return this.extensions.ui.length > 0
-  }
-
-  extensionsForType(specification: {identifier: string; externalIdentifier: string}): Extension[] {
-    const allExternsions = [...this.extensions.ui, ...this.extensions.function, ...this.extensions.theme]
-    return allExternsions.filter(
+  extensionsForType(specification: {identifier: string; externalIdentifier: string}): ExtensionInstance[] {
+    return this.allExtensions.filter(
       (extension) => extension.type === specification.identifier || extension.type === specification.externalIdentifier,
     )
   }
@@ -145,13 +131,13 @@ type RendererVersionResult = {name: string; version: string} | undefined | 'not_
  * @returns The version if the dependency exists.
  */
 export async function getUIExtensionRendererVersion(
-  uiExtensionType: UIExtensionTypes,
+  extension: ExtensionInstance,
   app: AppInterface,
 ): Promise<RendererVersionResult> {
   // Look for the vanilla JS version of the dependency (the react one depends on it, will always be present)
-  const rendererDependency = getUIExtensionRendererDependency(uiExtensionType)
+  const rendererDependency = extension.dependency
   if (!rendererDependency) return undefined
-  return getDependencyVersion(rendererDependency.name, app.directory)
+  return getDependencyVersion(rendererDependency, app.directory)
 }
 
 export async function getDependencyVersion(dependency: string, directory: string): Promise<RendererVersionResult> {
@@ -164,8 +150,8 @@ export async function getDependencyVersion(dependency: string, directory: string
    */
   if (isReact) {
     const dependencyName = dependency.split('/')
-    const pattern = path.join('node_modules', dependencyName[0]!, dependencyName[1]!, 'package.json')
-    const reactPackageJsonPath = await path.findUp(pattern, {
+    const pattern = joinPath('node_modules', dependencyName[0]!, dependencyName[1]!, 'package.json')
+    const reactPackageJsonPath = await findPathUp(pattern, {
       type: 'file',
       cwd: directory,
       allowSymlinks: true,
@@ -173,20 +159,20 @@ export async function getDependencyVersion(dependency: string, directory: string
     if (!reactPackageJsonPath) {
       return 'not_found'
     }
-    cwd = await file.realpath(path.dirname(reactPackageJsonPath))
+    cwd = await fileRealPath(dirname(reactPackageJsonPath))
   }
 
   // Split the dependency name to avoid using "/" in windows
   const dependencyName = dependency.replace('-react', '').split('/')
-  const pattern = path.join('node_modules', dependencyName[0]!, dependencyName[1]!, 'package.json')
+  const pattern = joinPath('node_modules', dependencyName[0]!, dependencyName[1]!, 'package.json')
 
-  let packagePath = await path.findUp(pattern, {
+  let packagePath = await findPathUp(pattern, {
     cwd,
     type: 'file',
     allowSymlinks: true,
   })
   if (!packagePath) return 'not_found'
-  packagePath = await file.realpath(packagePath)
+  packagePath = await fileRealPath(packagePath)
 
   // Load the package.json and extract the version
   const packageContent = await readAndParsePackageJson(packagePath)

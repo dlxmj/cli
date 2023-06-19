@@ -1,5 +1,6 @@
 import {ExtensionsPayloadStore} from '../payload/store.js'
-import {Server} from 'node:http'
+import {ExtensionDevOptions} from '../../extension.js'
+import {Server} from 'http'
 
 export enum EventType {
   Update = 'update',
@@ -15,7 +16,7 @@ export interface WebSocketEvent {
   data: any
 }
 
-export interface SetupWebSocketConnectionOptions {
+export type SetupWebSocketConnectionOptions = ExtensionDevOptions & {
   httpServer: Server
   payloadStore: ExtensionsPayloadStore
 }

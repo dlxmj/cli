@@ -11,20 +11,56 @@ import {
   FindUpAndReadPackageJsonNotFoundError,
   usesWorkspaces,
   addResolutionOrOverride,
+  writePackageJSON,
+  getPackageManager,
+  installNPMDependenciesRecursively,
+  addNPMDependencies,
+  DependencyVersion,
 } from './node-package-manager.js'
-import {exec} from '../../system.js'
-import {join as pathJoin, normalize as pathNormalize} from '../../path.js'
-import {inTemporaryDirectory, mkdir, touch, write, write as writeFile} from '../../file.js'
-import {latestNpmPackageVersion} from '../../version.js'
-import {Abort} from '../../error.js'
-import {describe, it, expect, vi, test} from 'vitest'
+import {exec} from './system.js'
+import {inTemporaryDirectory, mkdir, touchFile, writeFile} from './fs.js'
+import {normalizePath as pathNormalize, joinPath, dirname} from './path.js'
+import latestVersion from 'latest-version'
+import {vi, describe, test, expect} from 'vitest'
 
 vi.mock('../../version.js')
-vi.mock('../../system.js')
+vi.mock('./system.js')
+vi.mock('latest-version')
+
 const mockedExec = vi.mocked(exec)
 
+describe('installNPMDependenciesRecursively', () => {
+  test('runs install in all the directories containing a package.json', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const rootPackage = joinPath(tmpDir, 'package.json')
+      const webPackage = joinPath(tmpDir, 'web/package.json')
+      const backendPackage = joinPath(tmpDir, 'web/backend/package.json')
+
+      await mkdir(dirname(webPackage))
+      await mkdir(dirname(backendPackage))
+
+      await writeFile(rootPackage, JSON.stringify({}))
+      await writeFile(webPackage, JSON.stringify({}))
+      await writeFile(backendPackage, JSON.stringify({}))
+
+      // When
+      await installNPMDependenciesRecursively({
+        directory: tmpDir,
+        packageManager: 'pnpm',
+      })
+
+      // Then
+      const calls = vi.mocked(exec).mock.calls as any
+      expect(exec).toHaveBeenCalledWith('pnpm', ['install'], expect.objectContaining({cwd: dirname(rootPackage)}))
+      expect(exec).toHaveBeenCalledWith('pnpm', ['install'], expect.objectContaining({cwd: dirname(webPackage)}))
+      expect(exec).toHaveBeenCalledWith('pnpm', ['install'], expect.objectContaining({cwd: dirname(backendPackage)}))
+    })
+  })
+})
+
 describe('packageManagerUsedForCreating', () => {
-  it('returns pnpm if the npm_config_user_agent variable contains yarn', () => {
+  test('returns pnpm if the npm_config_user_agent variable contains yarn', () => {
     // Given
     const env = {npm_config_user_agent: 'yarn/1.22.17'}
 
@@ -35,7 +71,7 @@ describe('packageManagerUsedForCreating', () => {
     expect(got).toBe('yarn')
   })
 
-  it('returns pnpm if the npm_config_user_agent variable contains pnpm', () => {
+  test('returns pnpm if the npm_config_user_agent variable contains pnpm', () => {
     // Given
     const env = {npm_config_user_agent: 'pnpm'}
 
@@ -46,7 +82,7 @@ describe('packageManagerUsedForCreating', () => {
     expect(got).toBe('pnpm')
   })
 
-  it('returns npm if the npm_config_user_agent variable contains npm', () => {
+  test('returns npm if the npm_config_user_agent variable contains npm', () => {
     // Given
     const env = {npm_config_user_agent: 'npm'}
 
@@ -57,7 +93,7 @@ describe('packageManagerUsedForCreating', () => {
     expect(got).toBe('npm')
   })
 
-  it('returns unknown when the package manager cannot be detected', () => {
+  test('returns unknown when the package manager cannot be detected', () => {
     // When
     const got = packageManagerUsedForCreating({})
 
@@ -67,7 +103,7 @@ describe('packageManagerUsedForCreating', () => {
 })
 
 describe('install', () => {
-  it('runs the install command', async () => {
+  test('runs the install command', async () => {
     // Given
     const packageManager = 'npm'
     const directory = '/path/to/project'
@@ -90,7 +126,7 @@ describe('getPackageName', () => {
   test('returns package name', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         name: 'packageName',
       }
@@ -109,7 +145,7 @@ describe('packageJSONContents', () => {
   test('returns full package content', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         name: 'packageName',
         version: '1.0.0',
@@ -131,7 +167,7 @@ describe('usesWorkspaces', () => {
   test('returns true when workspaces are used in the package.json', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         name: 'packageName',
         version: '1.0.0',
@@ -150,13 +186,13 @@ describe('usesWorkspaces', () => {
   test('returns true when workspaces are used by pnpm', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         name: 'packageName',
         version: '1.0.0',
       }
       await writeFile(packageJsonPath, JSON.stringify(packageJson))
-      const pnpmWorkspaceFilePath = pathJoin(tmpDir, 'pnpm-workspace.yaml')
+      const pnpmWorkspaceFilePath = joinPath(tmpDir, 'pnpm-workspace.yaml')
       await writeFile(pnpmWorkspaceFilePath, '')
 
       // When
@@ -170,7 +206,7 @@ describe('usesWorkspaces', () => {
   test('returns false when workspaces are not used', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         name: 'packageName',
         version: '1.0.0',
@@ -190,7 +226,7 @@ describe('getDependencies', () => {
   test('returns dev and production dependencies', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {prod: '1.2.3'},
         devDependencies: {dev: '4.5.6'},
@@ -209,7 +245,7 @@ describe('getDependencies', () => {
   test('returns dev dependencies when production dependencies do not exist', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         devDependencies: {dev: '4.5.6'},
       }
@@ -226,7 +262,7 @@ describe('getDependencies', () => {
   test('returns production dependencies when dev dependencies do not exist', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {prod: '1.2.3'},
       }
@@ -243,7 +279,7 @@ describe('getDependencies', () => {
   test('throws an error if the package.json file does not exist', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
 
       // When
       await expect(getDependencies(packageJsonPath)).rejects.toEqual(PackageJsonNotFoundError(pathNormalize(tmpDir)))
@@ -255,7 +291,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test('runs the right command when there is no version in dependency', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -278,7 +314,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's npm and dev dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -301,7 +337,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's npm and production dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -324,7 +360,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's npm and peer dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -347,7 +383,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's yarn and dev dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -370,7 +406,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's yarn and production dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -393,7 +429,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's yarn and peer dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -416,7 +452,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's pnpm and dev dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -439,7 +475,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's pnpm and production dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -462,7 +498,7 @@ describe('addNPMDependenciesIfNeeded', () => {
   test("runs the right command when it's pnpm and peer dependencies", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {
         dependencies: {existing: '1.2.3'},
       }
@@ -484,12 +520,12 @@ describe('addNPMDependenciesIfNeeded', () => {
 })
 
 describe('checkForNewVersion', () => {
-  it('returns undefined when last version is lower or equals than current version', async () => {
+  test('returns undefined when last version is lower or equals than current version', async () => {
     // Given
     const currentVersion = '2.2.2'
     const newestVersion = '2.2.2'
     const dependency = 'dependency'
-    vi.mocked(latestNpmPackageVersion).mockResolvedValue(newestVersion)
+    vi.mocked(latestVersion).mockResolvedValue(newestVersion)
 
     // When
     const result = await checkForNewVersion(dependency, currentVersion)
@@ -498,12 +534,12 @@ describe('checkForNewVersion', () => {
     expect(result).toBe(undefined)
   })
 
-  it('returns undefined when last version greater than current version', async () => {
+  test('returns undefined when last version greater than current version', async () => {
     // Given
     const currentVersion = '2.2.2'
     const newestVersion = '2.2.3'
     const dependency = 'dependency'
-    vi.mocked(latestNpmPackageVersion).mockResolvedValue(newestVersion)
+    vi.mocked(latestVersion).mockResolvedValue(newestVersion)
 
     // When
     const result = await checkForNewVersion(dependency, currentVersion)
@@ -512,11 +548,11 @@ describe('checkForNewVersion', () => {
     expect(result).toBe(newestVersion)
   })
 
-  it('returns undefined when error is thrown retrieving newest version', async () => {
+  test('returns undefined when error is thrown retrieving newest version', async () => {
     // Given
     const currentVersion = '2.2.2'
     const dependency = 'dependency'
-    vi.mocked(latestNpmPackageVersion).mockRejectedValue(undefined)
+    vi.mocked(latestVersion).mockRejectedValue(undefined)
 
     // When
     const result = await checkForNewVersion(dependency, currentVersion)
@@ -527,15 +563,15 @@ describe('checkForNewVersion', () => {
 })
 
 describe('findUpAndReadPackageJson', () => {
-  it('returns the content of the package.json', async () => {
+  test('returns the content of the package.json', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const subDirectory = pathJoin(tmpDir, 'subdir')
+      const subDirectory = joinPath(tmpDir, 'subdir')
       const version = '1.2.3'
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       await mkdir(subDirectory)
       const packageJson = {version}
-      await write(packageJsonPath, JSON.stringify(packageJson))
+      await writeFile(packageJsonPath, JSON.stringify(packageJson))
 
       // When
       const got = await findUpAndReadPackageJson(subDirectory)
@@ -546,10 +582,10 @@ describe('findUpAndReadPackageJson', () => {
     })
   })
 
-  it("throws a FindUpAndReadPackageJsonNotFoundError error if it can't find a package.json", async () => {
+  test("throws a FindUpAndReadPackageJsonNotFoundError error if it can't find a package.json", async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
-      const subDirectory = pathJoin(tmpDir, 'subdir')
+      const subDirectory = joinPath(tmpDir, 'subdir')
       await mkdir(subDirectory)
 
       // When/Then
@@ -561,28 +597,24 @@ describe('findUpAndReadPackageJson', () => {
 })
 
 describe('addResolutionOrOverride', () => {
-  it('when no package.json then an abort exception is thrown', async () => {
+  test('when no package.json then an abort exception is thrown', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
-      // Given
-      const reactType = {'@types/react': '17.0.30'}
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
-      // When
+      // Given/When
       const result = () => addResolutionOrOverride(tmpDir, {'@types/react': '17.0.30'})
 
       // Then
-
-      await expect(result).rejects.toThrow(Abort)
+      await expect(result).rejects.toThrow(FindUpAndReadPackageJsonNotFoundError(tmpDir))
     })
   })
 
-  it('when package.json without resolution and yarn manager then new resolution should be added', async () => {
+  test('when package.json without resolution and yarn manager then new resolution should be added', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
       const reactType = {'@types/react': '17.0.30'}
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {}
-      await write(packageJsonPath, JSON.stringify(packageJson))
-      await touch(pathJoin(tmpDir, 'yarn.lock'))
+      await writeFile(packageJsonPath, JSON.stringify(packageJson))
+      await touchFile(joinPath(tmpDir, 'yarn.lock'))
 
       // When
       await addResolutionOrOverride(tmpDir, reactType)
@@ -595,14 +627,14 @@ describe('addResolutionOrOverride', () => {
     })
   })
 
-  it('when package.json without resolution and npm manager then new overrides should be added', async () => {
+  test('when package.json without resolution and npm manager then new overrides should be added', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
       const reactType = {'@types/react': '17.0.30'}
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {}
-      await write(packageJsonPath, JSON.stringify(packageJson))
-      await touch(pathJoin(tmpDir, 'pnpm-lock.yaml'))
+      await writeFile(packageJsonPath, JSON.stringify(packageJson))
+      await touchFile(joinPath(tmpDir, 'pnpm-lock.yaml'))
 
       // When
       await addResolutionOrOverride(tmpDir, reactType)
@@ -615,14 +647,14 @@ describe('addResolutionOrOverride', () => {
     })
   })
 
-  it('when package.json without resolution and pnpm manager then new overrides should be added', async () => {
+  test('when package.json without resolution and pnpm manager then new overrides should be added', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
       const reactType = {'@types/react': '17.0.30'}
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {}
-      await write(packageJsonPath, JSON.stringify(packageJson))
-      await touch(pathJoin(tmpDir, 'pnpm-workspace.yaml'))
+      await writeFile(packageJsonPath, JSON.stringify(packageJson))
+      await touchFile(joinPath(tmpDir, 'pnpm-workspace.yaml'))
 
       // When
       await addResolutionOrOverride(tmpDir, reactType)
@@ -635,14 +667,14 @@ describe('addResolutionOrOverride', () => {
     })
   })
 
-  it('when package.json with existing resolution type and yarn manager then dependency version is overwritten', async () => {
+  test('when package.json with existing resolution type and yarn manager then dependency version is overwritten', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
       const reactType = {'@types/react': '17.0.30'}
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {resolutions: {'@types/react': '17.0.50'}}
-      await write(packageJsonPath, JSON.stringify(packageJson))
-      await touch(pathJoin(tmpDir, 'yarn.lock'))
+      await writeFile(packageJsonPath, JSON.stringify(packageJson))
+      await touchFile(joinPath(tmpDir, 'yarn.lock'))
 
       // When
       await addResolutionOrOverride(tmpDir, reactType)
@@ -655,14 +687,14 @@ describe('addResolutionOrOverride', () => {
     })
   })
 
-  it('when package.json with different resolution types and yarn manager then dependency version is overwritten', async () => {
+  test('when package.json with different resolution types and yarn manager then dependency version is overwritten', async () => {
     await inTemporaryDirectory(async (tmpDir) => {
       // Given
       const reactType = {'@types/react': '17.0.30'}
-      const packageJsonPath = pathJoin(tmpDir, 'package.json')
+      const packageJsonPath = joinPath(tmpDir, 'package.json')
       const packageJson = {resolutions: {'@types/node': '^17.0.38'}}
-      await write(packageJsonPath, JSON.stringify(packageJson))
-      await touch(pathJoin(tmpDir, 'yarn.lock'))
+      await writeFile(packageJsonPath, JSON.stringify(packageJson))
+      await touchFile(joinPath(tmpDir, 'yarn.lock'))
 
       // When
       await addResolutionOrOverride(tmpDir, reactType)
@@ -672,6 +704,158 @@ describe('addResolutionOrOverride', () => {
       expect(packageJsonContent.resolutions).toBeDefined()
       expect(packageJsonContent.resolutions).toEqual({'@types/node': '^17.0.38', '@types/react': '17.0.30'})
       expect(packageJsonContent.overrides).toBeUndefined()
+    })
+  })
+})
+
+describe('writePackageJSON', () => {
+  test('writes the package.json and returns it parsed', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const packageJSON = {name: 'mock name'}
+      const filePath = joinPath(tmpDir, 'package.json')
+
+      // When
+      await writePackageJSON(tmpDir, packageJSON)
+
+      // Then
+      const packageJsonContent = await readAndParsePackageJson(filePath)
+      expect(packageJsonContent).toEqual(packageJSON)
+    })
+  })
+})
+
+describe('getPackageManager', () => {
+  test('finds if npm is being used', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const packageJSON = {name: 'mock name'}
+      const filePath = joinPath(tmpDir, 'package.json')
+
+      // When
+      await writePackageJSON(tmpDir, packageJSON)
+
+      // Then
+      const packageManager = await getPackageManager(tmpDir)
+      expect(packageManager).toEqual('npm')
+    })
+  })
+
+  test('finds if yarn is being used', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const packageJSON = {name: 'mock name'}
+      const filePath = joinPath(tmpDir, 'package.json')
+      const yarnLock = joinPath(tmpDir, 'yarn.lock')
+
+      // When
+      await writePackageJSON(tmpDir, packageJSON)
+      await writeFile(yarnLock, '')
+
+      // Then
+      const packageManager = await getPackageManager(tmpDir)
+      expect(packageManager).toEqual('yarn')
+    })
+  })
+
+  test('finds if pnpm is being used', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const packageJSON = {name: 'mock name'}
+      const filePath = joinPath(tmpDir, 'package.json')
+      const pnpmLock = joinPath(tmpDir, 'pnpm-lock.yaml')
+
+      // When
+      await writePackageJSON(tmpDir, packageJSON)
+      await writeFile(pnpmLock, '')
+
+      // Then
+      const packageManager = await getPackageManager(tmpDir)
+      expect(packageManager).toEqual('pnpm')
+    })
+  })
+
+  test("throws a FindUpAndReadPackageJsonNotFoundError error if it can't find a package.json", async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const subDirectory = joinPath(tmpDir, 'subdir')
+      await mkdir(subDirectory)
+
+      // When/Then
+      await expect(() => getPackageManager(subDirectory)).rejects.toThrowError(
+        FindUpAndReadPackageJsonNotFoundError(subDirectory),
+      )
+    })
+  })
+})
+
+describe('addNPMDependencies', () => {
+  test('when using npm with multiple dependencies they should be installed one by one, adding --save-exact if needed', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const dependencies: DependencyVersion[] = [
+        {name: 'first', version: '^0.0.1'},
+        {name: 'second', version: '0.0.2'},
+      ]
+
+      // When
+      await addNPMDependencies(dependencies, {
+        type: 'prod',
+        packageManager: 'npm',
+        directory: tmpDir,
+      })
+
+      // Then
+      expect(mockedExec).toHaveBeenNthCalledWith(1, 'npm', ['install', 'first@^0.0.1', '--save-prod'], {
+        cwd: tmpDir,
+      })
+      expect(mockedExec).toHaveBeenNthCalledWith(2, 'npm', ['install', 'second@0.0.2', '--save-prod', '--save-exact'], {
+        cwd: tmpDir,
+      })
+    })
+  })
+
+  test('when using yarn with multiple dependencies they should be installed all at once', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const dependencies: DependencyVersion[] = [
+        {name: 'first', version: '0.0.1'},
+        {name: 'second', version: '0.0.2'},
+      ]
+
+      // When
+      await addNPMDependencies(dependencies, {
+        type: 'prod',
+        packageManager: 'yarn',
+        directory: tmpDir,
+      })
+
+      // Then
+      expect(mockedExec).toHaveBeenCalledWith('yarn', ['add', 'first@0.0.1', 'second@0.0.2', '--prod'], {
+        cwd: tmpDir,
+      })
+    })
+  })
+
+  test('when using pnpm with multiple dependencies they should be installed all at once', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const dependencies: DependencyVersion[] = [
+        {name: 'first', version: '0.0.1'},
+        {name: 'second', version: '0.0.2'},
+      ]
+
+      // When
+      await addNPMDependencies(dependencies, {
+        type: 'prod',
+        packageManager: 'pnpm',
+        directory: tmpDir,
+      })
+
+      // Then
+      expect(mockedExec).toHaveBeenCalledWith('pnpm', ['add', 'first@0.0.1', 'second@0.0.2', '--save-prod'], {
+        cwd: tmpDir,
+      })
     })
   })
 })

@@ -9,6 +9,7 @@ Moreover, you should think about scenarios other than the happy path and build f
 ## Aborting the execution using errors
 
 If your logic needs to abort the execution, throw instantiating any of the errors exported by `@shopify/cli-kit`:
+You can pass an array of [TokenItem](./ui-kit/contributing.md#tokenizedtext)s as the second param, the `tryMessage`, to format it properly.
 
 ```ts
 import {
@@ -19,7 +20,7 @@ import {
 
 throw new AbortError(
   "The project doesn't exist",
-  "Make sure the command is executed from a project's directory"
+  ["Make sure the command", {command: "npm install"}, "is executed from a project's directory"]
 )
 ```
 
@@ -52,7 +53,7 @@ There are scenarios where a function needs to inform the caller about the succes
 
 ```ts
 import { FatalError } from "@shopify/cli-kit/node/error"
-import {err, ok, Result} from '@shopify/cli-kit/common/result'
+import {err, ok, Result} from '@shopify/cli-kit/node/result'
 
 class ActionError extends FatalError {}
 
@@ -67,13 +68,13 @@ function action({success}: {success: boolean}): Result<string, ActionError> {
 // OK result
 let result = action({success: true})
 result.isErr() // false
-result.valueOrThrow() // ok
+result.valueOrBug() // ok
 result.mapError((error) => new FatalError("other error"))
 
 // Error result
 let result = action({success: false})
 result.isErr() // true
-result.valueOrThrow() // throws!
+result.valueOrBug() // throws!
 result.mapError((error) => new FatalError("other error"))
 ```
 

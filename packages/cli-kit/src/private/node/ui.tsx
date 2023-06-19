@@ -1,22 +1,35 @@
-import {isUnitTest} from '../../environment/local.js'
-import {collectLog, consoleLog, Logger, LogLevel, outputWhereAppropriate} from '../../output.js'
+import {treeKill} from './tree-kill.js'
+import {collectLog, consoleLog, Logger, LogLevel, outputWhereAppropriate} from '../../public/node/output.js'
+import {isUnitTest} from '../../public/node/context/local.js'
 import {ReactElement} from 'react'
-import {render as inkRender} from 'ink'
+import {Key, render as inkRender, RenderOptions} from 'ink'
 import {EventEmitter} from 'events'
 
-export function renderOnce(element: JSX.Element, logLevel: LogLevel = 'info', logger: Logger = consoleLog) {
-  const {output, unmount} = renderString(element)
+interface RenderOnceOptions {
+  logLevel?: LogLevel
+  logger?: Logger
+  renderOptions?: RenderOptions
+}
+
+export function renderOnce(
+  element: JSX.Element,
+  {logLevel = 'info', logger = consoleLog, renderOptions}: RenderOnceOptions,
+) {
+  const {output, unmount} = renderString(element, renderOptions)
 
   if (output) {
     if (isUnitTest()) collectLog(logLevel, output)
-    outputWhereAppropriate(logLevel, logger, output)
+    outputWhereAppropriate(logLevel, logger, output, {skipUIEvent: true})
   }
 
   unmount()
+
+  return output
 }
 
-export function render(element: JSX.Element) {
-  return inkRender(element)
+export function render(element: JSX.Element, options?: RenderOptions) {
+  const {waitUntilExit} = inkRender(element, options)
+  return waitUntilExit()
 }
 
 interface Instance {
@@ -24,17 +37,20 @@ interface Instance {
   unmount: () => void
 }
 
-const TEST_TERMINAL_WIDTH = 80
-class OutputStream extends EventEmitter {
+export class Stdout extends EventEmitter {
   columns: number
+  rows: number
+  readonly frames: string[] = []
   private _lastFrame?: string
 
-  constructor(options: {columns: number}) {
+  constructor(options: {columns?: number; rows?: number}) {
     super()
-    this.columns = options.columns
+    this.columns = options.columns ?? 80
+    this.rows = options.rows ?? 80
   }
 
   write = (frame: string) => {
+    this.frames.push(frame)
     this._lastFrame = frame
   }
 
@@ -43,15 +59,13 @@ class OutputStream extends EventEmitter {
   }
 }
 
-export const renderString = (element: ReactElement): Instance => {
-  const stdout = new OutputStream({columns: isUnitTest() ? TEST_TERMINAL_WIDTH : process.stdout.columns})
-  const stderr = new OutputStream({columns: isUnitTest() ? TEST_TERMINAL_WIDTH : process.stderr.columns})
+const renderString = (element: ReactElement, renderOptions?: RenderOptions): Instance => {
+  const columns = isUnitTest() ? 80 : process.stdout.columns
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stdout = (renderOptions?.stdout as any) ?? new Stdout({columns})
 
   const instance = inkRender(element, {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    stdout: stdout as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    stderr: stderr as any,
+    stdout,
     debug: true,
     exitOnCtrlC: false,
     patchConsole: false,
@@ -60,5 +74,12 @@ export const renderString = (element: ReactElement): Instance => {
   return {
     output: stdout.lastFrame(),
     unmount: instance.unmount,
+  }
+}
+
+export function handleCtrlC(input: string, key: Key) {
+  if (input === 'c' && key.ctrl) {
+    // Exceptions thrown in hooks aren't caught by our errorHandler.
+    treeKill('SIGINT')
   }
 }

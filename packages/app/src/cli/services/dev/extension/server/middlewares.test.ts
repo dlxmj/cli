@@ -13,8 +13,19 @@ import * as templates from '../templates.js'
 import * as payload from '../payload.js'
 import {UIExtensionPayload} from '../payload/models.js'
 import {testUIExtension} from '../../../../models/app/app.test-data.js'
-import {http, file, path} from '@shopify/cli-kit'
-import {describe, expect, it, vi} from 'vitest'
+import {describe, expect, vi, test} from 'vitest'
+import {inTemporaryDirectory, mkdir, touchFile, writeFile} from '@shopify/cli-kit/node/fs'
+import * as h3 from 'h3'
+import {joinPath} from '@shopify/cli-kit/node/path'
+
+vi.mock('h3', async () => {
+  const actual: any = await vi.importActual('h3')
+  return {
+    ...actual,
+    send: vi.fn(),
+    sendRedirect: vi.fn(),
+  }
+})
 
 function getMockRequest({context = {}, headers = {}}) {
   const request = {
@@ -22,7 +33,7 @@ function getMockRequest({context = {}, headers = {}}) {
     headers,
   }
 
-  return request as unknown as http.IncomingMessage
+  return request as unknown as h3.IncomingMessage
 }
 
 function getMockResponse() {
@@ -44,7 +55,7 @@ function getMockResponse() {
     },
   }
 
-  return response as unknown as http.ServerResponse
+  return response as unknown as h3.ServerResponse
 }
 
 function getMockNext() {
@@ -54,7 +65,7 @@ function getMockNext() {
 }
 
 describe('corsMiddleware()', () => {
-  it('sets headers to allow cross origin requests', () => {
+  test('sets headers to allow cross origin requests', () => {
     const response = getMockResponse()
 
     corsMiddleware(getMockRequest({}), response, getMockNext())
@@ -69,7 +80,7 @@ describe('corsMiddleware()', () => {
 })
 
 describe('noCacheMiddleware()', () => {
-  it('sets headers to prevent caching', () => {
+  test('sets headers to prevent caching', () => {
     const response = getMockResponse()
 
     noCacheMiddleware(getMockRequest({}), response, getMockNext())
@@ -79,25 +90,24 @@ describe('noCacheMiddleware()', () => {
 })
 
 describe('redirectToDevConsoleMiddleware()', () => {
-  it('redirects to /extensions/dev-console', async () => {
-    vi.spyOn(http, 'sendRedirect')
-
+  test('redirects to /extensions/dev-console', async () => {
     const response = getMockResponse()
 
     await redirectToDevConsoleMiddleware(getMockRequest({}), response, getMockNext())
 
-    expect(http.sendRedirect).toHaveBeenCalledWith(response.event, '/extensions/dev-console', 307)
+    expect(h3.sendRedirect).toHaveBeenCalledWith(response.event, '/extensions/dev-console', 307)
   })
 })
 
 describe('fileServerMiddleware()', async () => {
-  it.skip('returns 404 if file does not exist', async () => {
-    await file.inTemporaryDirectory(async (tmpDir: string) => {
+  // eslint-disable-next-line vitest/no-disabled-tests
+  test.skip('returns 404 if file does not exist', async () => {
+    await inTemporaryDirectory(async (tmpDir: string) => {
       vi.spyOn(utilities, 'sendError').mockImplementation(() => {})
 
-      await file.mkdir(path.join(tmpDir, 'foo'))
+      await mkdir(joinPath(tmpDir, 'foo'))
 
-      const filePath = path.join(tmpDir, 'foo', 'missing.file')
+      const filePath = joinPath(tmpDir, 'foo', 'missing.file')
       const response = getMockResponse()
 
       await fileServerMiddleware(getMockRequest({}), getMockResponse(), getMockNext(), {
@@ -111,16 +121,16 @@ describe('fileServerMiddleware()', async () => {
     })
   })
 
-  it('returns an index.html for folder paths', async () => {
-    await file.inTemporaryDirectory(async (tmpDir: string) => {
-      await file.mkdir(path.join(tmpDir, 'foo'))
-      await file.touch(path.join(tmpDir, 'foo', 'index.html'))
-      await file.write(path.join(tmpDir, 'foo', 'index.html'), '<html></html>')
+  test('returns an index.html for folder paths', async () => {
+    await inTemporaryDirectory(async (tmpDir: string) => {
+      await mkdir(joinPath(tmpDir, 'foo'))
+      await touchFile(joinPath(tmpDir, 'foo', 'index.html'))
+      await writeFile(joinPath(tmpDir, 'foo', 'index.html'), '<html></html>')
 
       const response = getMockResponse()
 
       await fileServerMiddleware(getMockRequest({}), response, getMockNext(), {
-        filePath: path.join(tmpDir, 'foo'),
+        filePath: joinPath(tmpDir, 'foo'),
       })
 
       expect(response.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html')
@@ -129,7 +139,7 @@ describe('fileServerMiddleware()', async () => {
     })
   })
 
-  it.each([
+  test.each([
     ['.ico', 'image/x-icon'],
     ['.html', 'text/html'],
     ['.js', 'text/javascript'],
@@ -143,18 +153,18 @@ describe('fileServerMiddleware()', async () => {
     ['.pdf', 'application/pdf'],
     ['.doc', 'application/msword'],
   ])('returns %s with ContentType: %s string', async (extension, contentType) => {
-    await file.inTemporaryDirectory(async (tmpDir: string) => {
+    await inTemporaryDirectory(async (tmpDir: string) => {
       const fileName = `bar.${extension}`
       const fileContent = `Content for ${fileName}`
 
-      await file.mkdir(path.join(tmpDir, 'foo'))
-      await file.touch(path.join(tmpDir, 'foo', fileName))
-      await file.write(path.join(tmpDir, 'foo', fileName), fileContent)
+      await mkdir(joinPath(tmpDir, 'foo'))
+      await touchFile(joinPath(tmpDir, 'foo', fileName))
+      await writeFile(joinPath(tmpDir, 'foo', fileName), fileContent)
 
       const response = getMockResponse()
 
       await fileServerMiddleware(getMockRequest({}), response, getMockNext(), {
-        filePath: path.join(tmpDir, 'foo', fileName),
+        filePath: joinPath(tmpDir, 'foo', fileName),
       })
 
       expect(response.setHeader).toHaveBeenCalledWith('Content-Type', contentType)
@@ -163,16 +173,16 @@ describe('fileServerMiddleware()', async () => {
     })
   })
 
-  it('sets Content-Type to text/plain if it does not understand the file extension', async () => {
-    await file.inTemporaryDirectory(async (tmpDir: string) => {
-      await file.mkdir(path.join(tmpDir, 'foo'))
-      await file.touch(path.join(tmpDir, 'foo', 'bar.foo'))
-      await file.write(path.join(tmpDir, 'foo', 'bar.foo'), 'Content for bar.foo')
+  test('sets Content-Type to text/plain if it does not understand the file extension', async () => {
+    await inTemporaryDirectory(async (tmpDir: string) => {
+      await mkdir(joinPath(tmpDir, 'foo'))
+      await touchFile(joinPath(tmpDir, 'foo', 'bar.foo'))
+      await writeFile(joinPath(tmpDir, 'foo', 'bar.foo'), 'Content for bar.foo')
 
       const response = getMockResponse()
 
       await fileServerMiddleware(getMockRequest({}), response, getMockNext(), {
-        filePath: path.join(tmpDir, 'foo', 'bar.foo'),
+        filePath: joinPath(tmpDir, 'foo', 'bar.foo'),
       })
 
       expect(response.setHeader).toHaveBeenCalledWith('Content-Type', 'text/plain')
@@ -183,8 +193,8 @@ describe('fileServerMiddleware()', async () => {
 })
 
 describe('getExtensionAssetMiddleware()', () => {
-  it('returns a 404 if the extensionID is not found', async () => {
-    await file.inTemporaryDirectory(async (tmpDir: string) => {
+  test('returns a 404 if the extensionID is not found', async () => {
+    await inTemporaryDirectory(async (tmpDir: string) => {
       vi.spyOn(utilities, 'sendError').mockImplementation(() => {})
 
       const options = {
@@ -192,7 +202,7 @@ describe('getExtensionAssetMiddleware()', () => {
           extensions: [
             await testUIExtension({
               devUUID: '123abc',
-              outputBundlePath: path.join(tmpDir, 'dist', 'main.js'),
+              outputPath: joinPath(tmpDir, 'dist', 'main.js'),
             }),
           ],
         },
@@ -221,27 +231,27 @@ describe('getExtensionAssetMiddleware()', () => {
     })
   })
 
-  it('returns the file for that asset path', async () => {
-    await file.inTemporaryDirectory(async (tmpDir: string) => {
+  test('returns the file for that asset path', async () => {
+    await inTemporaryDirectory(async (tmpDir: string) => {
       const response = getMockResponse()
       const devUUID = '123abc'
       const fileName = 'main.js'
-      const outputBundlePath = path.join(tmpDir, devUUID, fileName)
+      const outputPath = joinPath(tmpDir, devUUID, fileName)
       const options = {
         devOptions: {
           extensions: [
             {
               devUUID,
-              outputBundlePath,
+              outputPath,
             },
           ],
         },
         payloadStore: {},
       } as unknown as GetExtensionsMiddlewareOptions
 
-      await file.mkdir(path.join(tmpDir, devUUID))
-      await file.touch(outputBundlePath)
-      await file.write(outputBundlePath, `content from ${fileName}`)
+      await mkdir(joinPath(tmpDir, devUUID))
+      await touchFile(outputPath)
+      await writeFile(outputPath, `content from ${fileName}`)
 
       await getExtensionAssetMiddleware(options)(
         getMockRequest({
@@ -264,7 +274,7 @@ describe('getExtensionAssetMiddleware()', () => {
 })
 
 describe('getExtensionPayloadMiddleware()', () => {
-  it('returns a 404 if the extension is not found', async () => {
+  test('returns a 404 if the extension is not found', async () => {
     vi.spyOn(utilities, 'sendError').mockImplementation(() => {})
 
     const actualExtensionId = '123abc'
@@ -302,8 +312,7 @@ describe('getExtensionPayloadMiddleware()', () => {
   })
 
   describe('if the accept header starts with text/html', () => {
-    it('returns html if the extension surface is post_purchase', async () => {
-      vi.spyOn(http, 'send')
+    test('returns html if the extension surface is post_purchase', async () => {
       vi.spyOn(templates, 'getHTML').mockResolvedValue('mock html')
       vi.spyOn(utilities, 'getExtensionUrl').mockReturnValue('http://www.mock.com/extension/url')
 
@@ -346,11 +355,10 @@ describe('getExtensionPayloadMiddleware()', () => {
         extensionSurface: 'post_purchase',
       })
 
-      expect(http.send).toHaveBeenCalledWith(response.event, 'mock html')
+      expect(h3.send).toHaveBeenCalledWith(response.event, 'mock html')
     })
 
-    it('returns the redirect URL if the extension surface is not post_purchase', async () => {
-      vi.spyOn(http, 'sendRedirect')
+    test('returns the redirect URL if the extension surface is not post_purchase', async () => {
       vi.spyOn(utilities, 'getRedirectUrl').mockReturnValue('http://www.mock.com/redirect/url')
 
       const extensionId = '123abc'
@@ -389,12 +397,12 @@ describe('getExtensionPayloadMiddleware()', () => {
         getMockNext(),
       )
 
-      expect(http.sendRedirect).toHaveBeenCalledWith(response.event, 'http://www.mock.com/redirect/url', 307)
+      expect(h3.sendRedirect).toHaveBeenCalledWith(response.event, 'http://www.mock.com/redirect/url', 307)
     })
   })
 
   describe('if the accept header is not text/html', () => {
-    it('returns the app JSON', async () => {
+    test('returns the app JSON', async () => {
       vi.spyOn(payload, 'getUIExtensionPayload').mockResolvedValue({
         mock: 'extension payload',
       } as unknown as UIExtensionPayload)
@@ -410,6 +418,7 @@ describe('getExtensionPayloadMiddleware()', () => {
               devUUID: extensionId,
             }),
           ],
+          manifestVersion: '3',
         },
         payloadStore: {},
       } as unknown as GetExtensionsMiddlewareOptions
@@ -455,7 +464,7 @@ describe('getExtensionPayloadMiddleware()', () => {
 })
 
 describe('getExtensionPointMiddleware()', () => {
-  it('returns a 404 if the extension is not found', async () => {
+  test('returns a 404 if the extension is not found', async () => {
     vi.spyOn(utilities, 'sendError').mockImplementation(() => {})
 
     const actualExtensionId = '123abc'
@@ -492,7 +501,7 @@ describe('getExtensionPointMiddleware()', () => {
     })
   })
 
-  it('returns a 404 if requested extension point target is not configured', async () => {
+  test('returns a 404 if requested extension point target is not configured', async () => {
     vi.spyOn(utilities, 'sendError').mockImplementation(() => {})
 
     const extensionId = '123abc'
@@ -540,7 +549,7 @@ describe('getExtensionPointMiddleware()', () => {
     })
   })
 
-  it('returns a 404 if requested extension point target is invalid and no redirect url can be constructed', async () => {
+  test('returns a 404 if requested extension point target is invalid and no redirect url can be constructed', async () => {
     vi.spyOn(utilities, 'sendError').mockImplementation(() => {})
 
     const extensionId = '123abc'
@@ -588,8 +597,7 @@ describe('getExtensionPointMiddleware()', () => {
     })
   })
 
-  it('returns the redirect URL if the requested extension point target is configured', async () => {
-    vi.spyOn(http, 'sendRedirect')
+  test('returns the redirect URL if the requested extension point target is configured', async () => {
     vi.spyOn(utilities, 'getRedirectUrl').mockReturnValue('http://www.mock.com/redirect/url')
 
     const extensionId = '123abc'
@@ -635,6 +643,6 @@ describe('getExtensionPointMiddleware()', () => {
       getMockNext(),
     )
 
-    expect(http.sendRedirect).toHaveBeenCalledWith(response.event, 'http://www.mock.com/redirect/url', 307)
+    expect(h3.sendRedirect).toHaveBeenCalledWith(response.event, 'http://www.mock.com/redirect/url', 307)
   })
 })

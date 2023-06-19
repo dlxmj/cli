@@ -1,58 +1,96 @@
 import {generateSchemaService} from './generate-schema.js'
-import * as localEnvironment from './environment.js'
+import * as localEnvironment from './context.js'
 import * as identifiers from '../models/app/identifiers.js'
 import {testApp, testFunctionExtension} from '../models/app/app.test-data.js'
-import {api, environment, error} from '@shopify/cli-kit'
-import {beforeEach, describe, expect, it, MockedFunction, vi} from 'vitest'
+import {ApiSchemaDefinitionQuery} from '../api/graphql/functions/api_schema_definition.js'
+import {beforeEach, describe, expect, MockedFunction, vi, test} from 'vitest'
+import {partnersRequest} from '@shopify/cli-kit/node/api/partners'
+import {ensureAuthenticatedPartners} from '@shopify/cli-kit/node/session'
+import {isTerminalInteractive} from '@shopify/cli-kit/node/context/local'
+import {AbortError} from '@shopify/cli-kit/node/error'
+import {inTemporaryDirectory, readFile} from '@shopify/cli-kit/node/fs'
+import {joinPath} from '@shopify/cli-kit/node/path'
+import * as output from '@shopify/cli-kit/node/output'
+
+vi.mock('@shopify/cli-kit/node/api/partners')
+vi.mock('@shopify/cli-kit/node/session')
+vi.mock('@shopify/cli-kit/node/context/local')
+
+vi.mock('../../../models/app/loader.ts')
+
+vi.mock('../models/app/identifiers.js', async () => {
+  const identifiers: any = await vi.importActual('../models/app/identifiers.js')
+  return {
+    ...identifiers,
+    getAppIdentifiers: vi.fn(),
+  }
+})
+vi.mock('./context.js', async () => {
+  const context: any = await vi.importActual('./context.js')
+  return {
+    ...context,
+    fetchOrCreateOrganizationApp: vi.fn(),
+  }
+})
 
 describe('generateSchemaService', () => {
   const token = 'token'
-  const request = api.partners.request as MockedFunction<typeof api.partners.request>
-  const isTerminalInteractive = environment.local.isTerminalInteractive as MockedFunction<
-    typeof environment.local.isTerminalInteractive
-  >
+  const request = partnersRequest as MockedFunction<typeof partnersRequest>
 
   beforeEach(() => {
-    vi.mock('@shopify/cli-kit', async () => {
-      const cliKit: any = await vi.importActual('@shopify/cli-kit')
-      return {
-        ...cliKit,
-        session: {
-          ensureAuthenticatedPartners: () => 'token',
-        },
-        api: {
-          partners: {
-            request: vi.fn(),
-          },
-          graphql: cliKit.api.graphql,
-        },
-        environment: {
-          ...cliKit.environment,
-          local: {
-            ...cliKit.environment.local,
-            isTerminalInteractive: vi.fn(),
-          },
-        },
-      }
-    })
-
+    vi.mocked(ensureAuthenticatedPartners).mockResolvedValue('token')
     request.mockImplementation(() => Promise.resolve({definition: 'schema'}))
   })
 
-  it('performs GraphQL query to fetch the schema', async () => {
-    // Given
-    const app = testApp()
-    const extension = await testFunctionExtension()
-    const apiKey = 'api-key'
+  test('Save the latest GraphQL schema to ./[extension]/schema.graphql when stdout flag is ABSENT', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const app = testApp()
+      const extension = await testFunctionExtension({})
+      const apiKey = 'api-key'
+      const path = tmpDir
 
-    // When
-    const result = await generateSchemaService({app, extension, apiKey})
+      // When
+      await generateSchemaService({
+        app,
+        extension,
+        apiKey,
+        path,
+        stdout: false,
+      })
 
-    // Then
-    expect(result).toBe('schema')
+      // Then
+      const outputFile = await readFile(joinPath(tmpDir, 'schema.graphql'))
+      expect(outputFile).toEqual('schema')
+    })
   })
 
-  it('aborts if a schema could not be generated', async () => {
+  test('Print the latest GraphQL schema to stdout when stdout flag is PRESENT', async () => {
+    await inTemporaryDirectory(async (tmpDir) => {
+      // Given
+      const app = testApp()
+      const extension = await testFunctionExtension()
+      const apiKey = 'api-key'
+      const path = tmpDir
+      const stdout = true
+      const mockOutput = vi.fn()
+      vi.spyOn(output, 'outputInfo').mockImplementation(mockOutput)
+
+      // When
+      await generateSchemaService({
+        app,
+        extension,
+        apiKey,
+        path,
+        stdout,
+      })
+
+      // Then
+      expect(mockOutput).toHaveBeenCalledWith('schema')
+    })
+  })
+
+  test('aborts if a schema could not be generated', async () => {
     // Given
     const app = testApp()
     const extension = await testFunctionExtension()
@@ -60,10 +98,16 @@ describe('generateSchemaService', () => {
     request.mockImplementation(() => Promise.resolve({definition: null}))
 
     // When
-    const result = generateSchemaService({app, extension, apiKey})
+    const result = generateSchemaService({
+      app,
+      extension,
+      apiKey,
+      path: '',
+      stdout: true,
+    })
 
     // Then
-    await expect(result).rejects.toThrow(error.Abort)
+    await expect(result).rejects.toThrow(AbortError)
   })
 
   describe('API key', () => {
@@ -72,42 +116,24 @@ describe('generateSchemaService', () => {
     const promptApiKey = 'prompt-api-key'
 
     const getAppIdentifiers = identifiers.getAppIdentifiers as MockedFunction<typeof identifiers.getAppIdentifiers>
-    const fetchOrganizationAndFetchOrCreateApp =
-      localEnvironment.fetchOrganizationAndFetchOrCreateApp as MockedFunction<
-        typeof localEnvironment.fetchOrganizationAndFetchOrCreateApp
-      >
+    const fetchOrCreateOrganizationApp = localEnvironment.fetchOrCreateOrganizationApp as MockedFunction<
+      typeof localEnvironment.fetchOrCreateOrganizationApp
+    >
 
     beforeEach(async () => {
-      vi.mock('../models/app/identifiers.js', async () => {
-        const identifiers: any = await vi.importActual('../models/app/identifiers.js')
-        return {
-          ...identifiers,
-          getAppIdentifiers: vi.fn(),
-        }
-      })
-      vi.mock('./environment.js', async () => {
-        const environment: any = await vi.importActual('./environment.js')
-        return {
-          ...environment,
-          fetchOrganizationAndFetchOrCreateApp: vi.fn(),
-        }
-      })
       getAppIdentifiers.mockReturnValue({app: identifiersApiKey})
-      fetchOrganizationAndFetchOrCreateApp.mockResolvedValue({
-        partnersApp: {
-          id: 'id',
-          title: 'title',
-          apiKey: promptApiKey,
-          organizationId: '1',
-          apiSecretKeys: [],
-          grantedScopes: [],
-        },
-        orgId: '1',
+      fetchOrCreateOrganizationApp.mockResolvedValue({
+        id: 'id',
+        title: 'title',
+        apiKey: promptApiKey,
+        organizationId: '1',
+        apiSecretKeys: [],
+        grantedScopes: [],
       })
-      isTerminalInteractive.mockReturnValue(true)
+      vi.mocked(isTerminalInteractive).mockReturnValue(true)
     })
 
-    it('uses options API key if provided', async () => {
+    test('uses options API key if provided', async () => {
       // Given
       const app = testApp()
       const extension = await testFunctionExtension()
@@ -117,17 +143,23 @@ describe('generateSchemaService', () => {
       } = extension
 
       // When
-      await generateSchemaService({app, extension, apiKey})
+      await generateSchemaService({
+        app,
+        extension,
+        apiKey,
+        path: '',
+        stdout: true,
+      })
 
       // Then
-      expect(request).toHaveBeenCalledWith(api.graphql.ApiSchemaDefinitionQuery, token, {
+      expect(request).toHaveBeenCalledWith(ApiSchemaDefinitionQuery, token, {
         apiKey,
         version,
         type,
       })
     })
 
-    it('uses app identifier API key, if options API key is not provided', async () => {
+    test('uses app identifier API key, if options API key is not provided', async () => {
       // Given
       const app = testApp()
       const extension = await testFunctionExtension()
@@ -137,17 +169,22 @@ describe('generateSchemaService', () => {
       } = extension
 
       // When
-      await generateSchemaService({app, extension})
+      await generateSchemaService({
+        app,
+        extension,
+        path: '',
+        stdout: true,
+      })
 
       // Then
-      expect(request).toHaveBeenCalledWith(api.graphql.ApiSchemaDefinitionQuery, token, {
+      expect(request).toHaveBeenCalledWith(ApiSchemaDefinitionQuery, token, {
         apiKey: identifiersApiKey,
         version,
         type,
       })
     })
 
-    it('prompts for app if no API key is provided in interactive mode', async () => {
+    test('prompts for app if no API key is provided in interactive mode', async () => {
       // Given
       const app = testApp()
       const extension = await testFunctionExtension()
@@ -158,25 +195,35 @@ describe('generateSchemaService', () => {
       getAppIdentifiers.mockReturnValue({app: undefined})
 
       // When
-      await generateSchemaService({app, extension})
+      await generateSchemaService({
+        app,
+        extension,
+        path: '',
+        stdout: true,
+      })
 
       // Then
-      expect(request).toHaveBeenCalledWith(api.graphql.ApiSchemaDefinitionQuery, token, {
+      expect(request).toHaveBeenCalledWith(ApiSchemaDefinitionQuery, token, {
         apiKey: promptApiKey,
         version,
         type,
       })
     })
 
-    it('aborts if no API key is provided in non-interactive mode', async () => {
+    test('aborts if no API key is provided in non-interactive mode', async () => {
       // Given
       const app = testApp()
       const extension = await testFunctionExtension()
       getAppIdentifiers.mockReturnValue({app: undefined})
-      isTerminalInteractive.mockReturnValue(false)
+      vi.mocked(isTerminalInteractive).mockReturnValue(false)
 
       // When
-      const result = generateSchemaService({app, extension})
+      const result = generateSchemaService({
+        app,
+        extension,
+        path: '',
+        stdout: true,
+      })
 
       await expect(result).rejects.toThrow()
       expect(request).not.toHaveBeenCalled()

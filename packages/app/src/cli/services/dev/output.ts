@@ -1,8 +1,11 @@
 import {PartnersURLs} from './urls.js'
 import {AppInterface} from '../../models/app/app.js'
-import {FunctionExtension, ThemeExtension, UIExtension} from '../../models/app/extensions.js'
 import {OrganizationApp} from '../../models/organization.js'
-import {output, environment} from '@shopify/cli-kit'
+import {ExtensionInstance} from '../../models/extensions/extension-instance.js'
+import {partnersFqdn} from '@shopify/cli-kit/node/context/fqdn'
+import {renderConcurrent, RenderConcurrentOptions, renderInfo} from '@shopify/cli-kit/node/ui'
+import {outputContent, outputInfo, outputToken} from '@shopify/cli-kit/node/output'
+import {openURL} from '@shopify/cli-kit/node/system'
 
 export async function outputUpdateURLsResult(
   updated: boolean,
@@ -11,82 +14,86 @@ export async function outputUpdateURLsResult(
 ) {
   const dashboardURL = await partnersURL(app.organizationId, app.id)
   if (app.newApp) {
-    outputUpdatedURLFirstTime(urls.applicationUrl, dashboardURL)
-  } else if (updated) {
-    output.completed('URL updated')
-  } else {
-    output.info(
-      output.content`\nTo make URL updates manually, you can add the following URLs as redirects in your ${dashboardURL}:`,
-    )
-    urls.redirectUrlWhitelist.forEach((url) => output.info(`  ${url}`))
+    renderInfo({
+      headline: `For your convenience, we've given your app a default URL: ${urls.applicationUrl}.`,
+      body: [
+        "You can update your app's URL anytime in the",
+        dashboardURL,
+        'But once your app is live, updating its URL will disrupt user access.',
+      ],
+    })
+  } else if (!updated) {
+    renderInfo({
+      body: [
+        'To make URL updates manually, you can add the following URLs as redirects in your',
+        dashboardURL,
+        {char: ':'},
+        '\n\n',
+        {list: {items: urls.redirectUrlWhitelist}},
+      ],
+    })
   }
 }
 
-export function outputUpdatedURLFirstTime(url: string, dashboardURL: string) {
-  const message =
-    `\nFor your convenience, we've given your app a default URL: ${url}.\n\n` +
-    `You can update your app's URL anytime in the ${dashboardURL}. ` +
-    `But once your app is live, updating its URL will disrupt merchant access.`
-  output.info(message)
+export function outputExtensionsMessages(app: AppInterface) {
+  outputFunctionsMessage(app.allExtensions.filter((ext) => ext.isFunctionExtension))
+  outputThemeExtensionsMessage(app.allExtensions.filter((ext) => ext.isThemeExtension))
 }
 
-export function outputAppURL(storeFqdn: string, url: string) {
-  const title = url.includes('localhost') ? 'App URL' : 'Shareable app URL'
-  const heading = output.token.heading(title)
-  const appURL = buildAppURL(storeFqdn, url)
-  output.info(output.content`\n\n${heading}\n\n  ${appURL}\n`)
-}
+export function renderDev(renderConcurrentOptions: RenderConcurrentOptions, previewUrl: string | undefined) {
+  let options = renderConcurrentOptions
 
-export function outputDevConsoleURL(url: string) {
-  const title = 'Shopify extension dev console URL'
-  const heading = output.token.heading(title)
-  const devConsoleURL = `${url}/extensions/dev-console`
-  output.info(output.content`${heading}\n\n  ${devConsoleURL}\n`)
-}
-
-export function outputExtensionsMessages(app: AppInterface, storeFqdn: string, url: string) {
-  outputUIExtensionsURLs(app.extensions.ui, storeFqdn, url)
-  outputFunctionsMessage(app.extensions.function)
-  outputThemeExtensionsMessage(app.extensions.theme)
-}
-
-function outputUIExtensionsURLs(extensions: UIExtension[], storeFqdn: string, url: string) {
-  if (extensions.length > 0) {
-    outputDevConsoleURL(url)
+  if (previewUrl) {
+    options = {
+      ...options,
+      onInput: (input, _key, exit) => {
+        if (input === 'p' && previewUrl) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          openURL(previewUrl)
+        } else if (input === 'q') {
+          exit()
+        }
+      },
+      footer: {
+        shortcuts: [
+          {
+            key: 'p',
+            action: 'preview in your browser',
+          },
+          {
+            key: 'q',
+            action: 'quit',
+          },
+        ],
+        subTitle: `Preview URL: ${previewUrl}`,
+      },
+    }
   }
-
-  for (const extension of extensions) {
-    const message = extension.previewMessage(url, storeFqdn)
-    if (message) output.info(message)
-  }
+  return renderConcurrent(options)
 }
 
-function outputFunctionsMessage(extensions: FunctionExtension[]) {
+function outputFunctionsMessage(extensions: ExtensionInstance[]) {
   if (extensions.length === 0) return
   const names = extensions.map((ext) => ext.configuration.name)
-  const heading = output.token.heading(names.join(', '))
+  const heading = outputToken.heading(names.join(', '))
   const message = `These extensions need to be deployed to be manually tested.
 One testing option is to use a separate app dedicated to staging.`
-  output.info(output.content`${heading}\n${message}\n`)
+  outputInfo(outputContent`${heading}\n${message}\n`)
 }
 
-function outputThemeExtensionsMessage(extensions: ThemeExtension[]) {
+function outputThemeExtensionsMessage(extensions: ExtensionInstance[]) {
   if (extensions.length === 0) return
   for (const extension of extensions) {
     const message = extension.previewMessage('', '')
-    if (message) output.info(message)
+    if (message) outputInfo(message)
   }
 }
 
-function buildAppURL(storeFqdn: string, publicURL: string) {
-  const hostUrl = `${storeFqdn}/admin`
-  const hostParam = Buffer.from(hostUrl).toString('base64').replace(/[=]/g, '')
-  return `${publicURL}?shop=${storeFqdn}&host=${hostParam}`
-}
-
-async function partnersURL(organizationId: string, appId: string): Promise<string> {
-  return output.content`${output.token.link(
-    `Partners Dashboard`,
-    `https://${await environment.fqdn.partners()}/${organizationId}/apps/${appId}/edit`,
-  )}`.value
+async function partnersURL(organizationId: string, appId: string) {
+  return {
+    link: {
+      label: 'Partners Dashboard',
+      url: `https://${await partnersFqdn()}/${organizationId}/apps/${appId}/edit`,
+    },
+  }
 }

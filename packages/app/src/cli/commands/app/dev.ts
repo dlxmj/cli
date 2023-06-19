@@ -1,16 +1,16 @@
 import {appFlags} from '../../flags.js'
-import {AppInterface} from '../../models/app/app.js'
 import dev from '../../services/dev.js'
-import {load as loadApp} from '../../models/app/loader.js'
 import Command from '../../utilities/app-command.js'
 import {Flags} from '@oclif/core'
-import {path, string, cli, metadata} from '@shopify/cli-kit'
+import {normalizeStoreFqdn} from '@shopify/cli-kit/node/context/fqdn'
+import {globalFlags} from '@shopify/cli-kit/node/cli'
+import {addPublicMetadata} from '@shopify/cli-kit/node/metadata'
 
 export default class Dev extends Command {
-  static description = 'Run the app'
+  static description = 'Run the app.'
 
   static flags = {
-    ...cli.globalFlags,
+    ...globalFlags,
     ...appFlags,
     'api-key': Flags.string({
       hidden: false,
@@ -20,9 +20,9 @@ export default class Dev extends Command {
     store: Flags.string({
       hidden: false,
       char: 's',
-      description: 'Development store URL. Must be an existing development store.',
+      description: 'Store URL. Must be an existing development or Shopify Plus sandbox store.',
       env: 'SHOPIFY_FLAG_STORE',
-      parse: (input, _) => Promise.resolve(string.normalizeStoreName(input)),
+      parse: async (input) => normalizeStoreFqdn(input),
     }),
     reset: Flags.boolean({
       hidden: false,
@@ -32,7 +32,7 @@ export default class Dev extends Command {
     }),
     'skip-dependencies-installation': Flags.boolean({
       hidden: false,
-      description: 'Skips the installation of dependencies.',
+      description: 'Skips the installation of dependencies. Deprecated, use workspaces instead.',
       env: 'SHOPIFY_FLAG_SKIP_DEPENDENCIES_INSTALLATION',
       default: false,
     }),
@@ -49,12 +49,13 @@ export default class Dev extends Command {
     }),
     'checkout-cart-url': Flags.string({
       hidden: false,
-      description: 'Resource URL for checkeout UI extension. Format: "/cart/{productVariantID}:{productQuantity}"',
+      description: 'Resource URL for checkout UI extension. Format: "/cart/{productVariantID}:{productQuantity}"',
       env: 'SHOPIFY_FLAG_CHECKOUT_CART_URL',
     }),
     'tunnel-url': Flags.string({
       hidden: false,
-      description: 'Override the ngrok tunnel URL. Format: "https://my-tunnel-url:port"',
+      description:
+        'Use a custom tunnel, it must be running before executing dev. Format: "https://my-tunnel-url:port".',
       env: 'SHOPIFY_FLAG_TUNNEL_URL',
       exclusive: ['no-tunnel', 'tunnel'],
     }),
@@ -65,11 +66,12 @@ export default class Dev extends Command {
       default: false,
       exclusive: ['tunnel-url', 'tunnel'],
     }),
-    tunnel: Flags.boolean({
-      hidden: false,
-      description: 'Use ngrok to create a tunnel to your service entry point',
+    tunnel: Flags.string({
+      hidden: true,
+      description: 'Select the tunnel provider',
       env: 'SHOPIFY_FLAG_TUNNEL',
-      default: true,
+      default: 'cloudflare',
+      options: ['cloudflare', 'ngrok'],
       exclusive: ['tunnel-url', 'no-tunnel'],
     }),
     theme: Flags.string({
@@ -83,22 +85,26 @@ export default class Dev extends Command {
       description: 'Local port of the theme app extension development server.',
       env: 'SHOPIFY_FLAG_THEME_APP_EXTENSION_PORT',
     }),
+    notify: Flags.string({
+      description:
+        'The file path or URL. The file path is to a file that you want updated on idle. The URL path is where you want a webhook posted to report on file changes.',
+      env: 'SHOPIFY_FLAG_NOTIFY',
+    }),
   }
 
   public async run(): Promise<void> {
     const {flags} = await this.parse(Dev)
 
-    await metadata.addPublic(() => ({
+    await addPublicMetadata(() => ({
       cmd_app_dependency_installation_skipped: flags['skip-dependencies-installation'],
       cmd_app_reset_used: flags.reset,
+      cmd_dev_tunnel_type: flags['tunnel-url'] ? 'custom' : flags.tunnel,
     }))
 
-    const directory = flags.path ? path.resolve(flags.path) : process.cwd()
-    const app: AppInterface = await loadApp(directory)
     const commandConfig = this.config
 
     await dev({
-      app,
+      directory: flags.path,
       apiKey: flags['api-key'],
       storeFqdn: flags.store,
       reset: flags.reset,
@@ -108,10 +114,11 @@ export default class Dev extends Command {
       subscriptionProductUrl: flags['subscription-product-url'],
       checkoutCartUrl: flags['checkout-cart-url'],
       tunnelUrl: flags['tunnel-url'],
-      tunnel: flags.tunnel,
+      tunnelProvider: flags.tunnel,
       noTunnel: flags['no-tunnel'],
       theme: flags.theme,
       themeExtensionPort: flags['theme-app-extension-port'],
+      notify: flags.notify,
     })
   }
 }

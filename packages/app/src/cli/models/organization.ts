@@ -2,13 +2,18 @@ export interface Organization {
   id: string
   businessName: string
   website?: string
-  appsNext: boolean
+  betas?: {
+    cliTunnelAlternative?: boolean
+  }
 }
 
-export interface OrganizationApp {
+export interface MinimalOrganizationApp {
   id: string
   title: string
   apiKey: string
+}
+
+export type OrganizationApp = MinimalOrganizationApp & {
   organizationId: string
   apiSecretKeys: {
     secret: string
@@ -16,6 +21,9 @@ export interface OrganizationApp {
   appType?: string
   newApp?: boolean
   grantedScopes: string[]
+  betas?: {
+    unifiedAppDeployment?: boolean
+  }
 }
 
 export interface OrganizationStore {
